@@ -47,8 +47,15 @@ def pad_taxid(taxid: str, length: int = 12) -> str:
     return digits.rjust(length, "0")
 
 
-def do_now() -> str:
-    """Return ISO 8601 datetime with offset in Dominican Republic time (UTC-4)."""
+def do_now(with_offset: bool = False) -> str:
+    """Return ISO 8601 datetime in Dominican Republic time (UTC-4).
+
+    By default returns datetime **without** offset (e.g. ``"2026-05-06T00:00:00"``)
+    which is the format confirmed to work with Digifact DO.
+    Use ``with_offset=True`` for ``"2026-05-06T00:00:00-04:00"``.
+    """
     _DO_TZ = timezone(timedelta(hours=-4))
     dt = datetime.now(_DO_TZ)
-    return dt.strftime("%Y-%m-%dT%H:%M:%S-04:00")
+    if with_offset:
+        return dt.strftime("%Y-%m-%dT%H:%M:%S-04:00")
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")

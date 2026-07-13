@@ -117,7 +117,7 @@ Console.WriteLine(result.AuthNumber);
 from digifact_sdk import DigifactClient
 
 client = DigifactClient(
-    taxid="132752155",         # RNC del emisor (9 dígitos)
+    taxid="132752155",         # RNC del emisor (9 dígitos, sin guiones)
     username="TESTUSERUNO",
     password="Digifact25*",
     country="DO",               # ← obligatorio para DO
@@ -126,14 +126,22 @@ client = DigifactClient(
 
 # Factura de Crédito Fiscal Electrónica (e-CF tipo 31)
 result = client.invoice(
-    buyer="40221201896",                   # RNC o Cédula del comprador
+    buyer={
+        "taxid": "132232798",
+        "name": "UNOLET SRL",
+        "email": "info@unolet.com",
+        "website": "https://www.unolet.com",
+        "address": "Dirección de prueba",
+        "country": "DO",
+    },
     items=[
-        {"description": "Consultoría", "price": 10000.00, "indicador_facturacion": "1"},
-        {"description": "Servicio exento", "price": 5000.00, "indicador_facturacion": "4"},
+        {"description": "Servicio de consultoría", "price": 10000.00, "indicador_facturacion": "1"},
+        {"description": "Caja de madera (exento)", "price": 5000.00, "indicador_facturacion": "4"},
     ],
     doc_type="31",
-    secuencia="0000490945",                # NCF asignado por la DGII
+    secuencia="0000490963",                # NCF asignado por la DGII
     fecha_vencimiento_secuencia="2028-12-31",
+    url_to_send="https://www.unolet.com",  # opcional
 )
 print(f"NCF: {result.number}")       # "E310000490960"
 print(f"Auth: {result.auth_number}") # UUID
@@ -145,8 +153,9 @@ print(f"Auth: {result.auth_number}") # UUID
 >   `fecha_vencimiento_secuencia`.
 > - Los precios de los ítems son **netos** (sin ITBIS). El impuesto se calcula
 >   automáticamente según `indicador_facturacion`.
-> - No existe "CF" (Consumidor Final) como en Guatemala — el comprador siempre
->   requiere un RNC o Cédula.
+> - **No existe** `"CF"` (Consumidor Final) como en Guatemala — el comprador
+>   siempre requiere un RNC o Cédula.
+> - El campo `Payments` **no se incluye** por defecto (es opcional en la API).
 > - La cancelación (`cancel()`) **aún no está disponible** para DO.
 
 ---
@@ -194,13 +203,13 @@ print(f"Auth: {result.auth_number}") # UUID
 
 | Parámetro | Requerido | Descripción |
 |-----------|:---------:|-------------|
-| `taxid` / `Taxid` | ✔ | GT: NIT. DO: RNC (9 dígitos). |
+| `taxid` / `Taxid` | ✔ | GT: NIT. DO: RNC (9 dígitos, sin guiones). |
 | `username` / `Username` | ✔ | Usuario Digifact (sin prefijo `GT.` ni `DO.`). |
 | `password` / `Password` | ✔\* | Contraseña. \*O bien `token`. |
 | `token` / `Token` | ✔\* | Bearer token preobtenido. \*O bien `password`. |
 | `country` / `Country` | | `"GT"` (default) o `"DO"`. |
 | `environment` / `Environment` | | `"test"` (default) o `"production"`. |
-| `seller_name` / `SellerName` | | Nombre del emisor. Se auto-consulta si se omite. |
+| `seller_name` / `SellerName` | | Nombre/Razón Social del emisor. Se auto-consulta si se omite. |
 | `seller_address` / `SellerAddress` | | Dirección del emisor. Se auto-consulta si se omite. |
 | `timeout` / `Timeout` | | Timeout HTTP. Default 120s (JS: 120000 ms). |
 
@@ -220,10 +229,23 @@ print(f"Auth: {result.auth_number}") # UUID
 
 ### Específicos de República Dominicana (se ignoran si `country="GT"`)
 
+Estos parámetros se pasan como `**kwargs` al `invoice()`, no al constructor:
+
 | Parámetro | Default | Descripción |
 |-----------|---------|-------------|
-| `seller_name` / `SellerName` | `""` | Razón Social del emisor. |
-| `seller_address` / `SellerAddress` | `""` | Dirección del emisor. |
+| `secuencia` | **requerido** | NCF asignado por la DGII (ej. `"0000490963"`). |
+| `fecha_vencimiento_secuencia` | **requerido** | Fecha de vencimiento del NCF (ej. `"2028-12-31"`). |
+| `indicador_monto_gravado` | `"0"` | `"0"` o `"1"`. |
+| `tipo_ingresos` | `"01"` | Código del catálogo DGII. |
+| `tipo_pago` | `"1"` | `"1"` = Contado. |
+| `fecha_desde` | `None` | Fecha inicio (opcional, ej. `"2026-05-01"`). |
+| `fecha_hasta` | `None` | Fecha fin (opcional, ej. `"2027-05-01"`). |
+| `numero_factura_interna` | `""` | Número de factura interno (opcional). |
+| `seller_additionl_info` | `None` | Lista `[{"Name": ..., "Value": ...}]` para `Seller.AdditionlInfo`. |
+| `seller_branch_name` | `"0001"` | Nombre de la sucursal. |
+| `url_to_send` | `None` | URL para incluir en `AdditionalDocumentInfo` (opcional). |
+| `payments` | `None` | Lista `[{Type, Code, Amount}]`. **No se incluye** si no se provee. |
+| `issue_dt` | `None` | IssuedDateTime. Default = hora actual DO sin offset. |
 
 > Para más detalles y ejemplos por lenguaje, ver los READMEs respectivos:
 > [Python](./python/README.md), [JavaScript](./javascript/README.md),
@@ -240,11 +262,56 @@ print(f"Auth: {result.auth_number}") # UUID
 | Prefijo username | `GT.{NIT}.{user}` | `DO.{RNC}.{user}` |
 | Moneda | `GTQ` | `DOP` |
 | Precios | **IVA incluido** | **Netos** (sin ITBIS) |
-| Impuesto | IVA 12% | ITBIS 18%/16%/0%/Exento |
-| Impuesto por ítem | En `Items[].Taxes` | A nivel de `Totals` |
+| Impuesto principal | IVA 12% | ITBIS 18%/16%/0% |
+| Items exentos/exonerados | No entran en `TotalTaxes` | Se incluyen con `Code: "EXENTO"` en `TotalTaxes` |
+| Impuesto por ítem | En `Items[].Taxes` | A nivel de `Totals.TotalTaxes` |
 | Consumidor Final | `"CF"` | No existe |
-| NCF | No aplica | `secuencia` obligatoria |
+| `Payments` en payload | No existe | Opcional (omitido por defecto) |
+| NCF | No aplica | `secuencia` obligatoria en `Header` |
 | Cancelación | Soportada | Pendiente de documentar |
+| Endpoint descarga | `GET /GetDocument` (PascalCase) | `GET /getDocument` (minúsculas) |
+| `FORMAT` en certify | `XML\|HTML\|PDF` | `XML` (solo XML; PDF se descarga aparte) |
+| Auth response key | `Otorgado_a` | `otorgado_a` (con minúsculas) |
+
+---
+
+## Estructura del payload DO
+
+El builder genera un JSON NUC para la API Digifact DO con esta estructura base:
+
+```
+Version: "1.0"
+CountryCode: "DO"
+Header:
+  DocType: "31"
+  IssuedDateTime: "2026-05-06T00:00:00"    ← sin offset
+  AdditionalIssueDocInfo:
+    - Secuencia / FechaVencimientoSecuencia
+    - IndicadorMontoGravado / TipoIngresos / TipoPago
+    - FechaDesde / FechaHasta (opcional)
+Seller:
+  TaxID / Name
+  AdditionlInfo: [...]              ← flexible
+  BranchInfo: Name / AddressInfo
+Buyer:
+  TaxID / TaxIDType: null
+  Name / EmailList / Website        ← plano (sin Contact)
+  AddressInfo
+Items: [{...}]
+  Description / Type / Qty: str / Price: str
+  Discounts: null / Taxes: null / Charges: null
+  Totals.TotalItem: str (2 decimales)
+  AdditionalInfo: [IndicadorFacturacion]
+Totals:
+  TotalTaxableAmount: str (2 dec)
+  TotalTaxes.TotalTax:
+    - Code: ITBIS1/ITBIS2/ITBIS3 (Amount=itbis)
+    - Code: EXENTO (Amount=line_total)
+  GrandTotal.InvoiceTotal: str (2 dec)
+  AdditionalInfo: [{Name:"", Value:""}]
+AdditionalDocumentInfo:
+  AdditionalInfo: [{AditionalInfo, AditionalData}]
+```
 
 ---
 

@@ -17,10 +17,12 @@ SDK en Python para la API Digifact FEL — facturación electrónica en
 - [Campos del ítem](#campos-del-ítem)
   - [Guatemala](#guatemala)
   - [República Dominicana](#república-dominicana-1)
+- [Parámetros específicos de `invoice()` para DO](#parámetros-específicos-de-invoice-para-do)
 - [Tipos de documento](#tipos-de-documento)
 - [Cálculo de impuestos](#cálculo-de-impuestos)
   - [IVA Guatemala](#iva-guatemala)
   - [ITBIS República Dominicana](#itbis-república-dominicana)
+- [Estructura del payload DO](#estructura-del-payload-do)
 - [Facturas de combustible (solo GT)](#facturas-de-combustible-solo-gt)
 - [Configuración de frases (solo GT)](#configuración-de-frases-solo-gt)
 - [Establecimiento / sucursal (solo GT)](#establecimiento--sucursal-solo-gt)
@@ -122,32 +124,40 @@ client = DigifactClient(
 
 # Factura de Crédito Fiscal Electrónica (e-CF tipo 31)
 result = client.invoice(
-    buyer="40221201896",       # RNC o Cédula del comprador
+    buyer={
+        "taxid": "132232798",
+        "name": "UNOLET SRL",
+        "email": "info@unolet.com",
+        "website": "https://www.unolet.com",
+        "address": "Dirección de prueba",
+        "country": "DO",
+    },
     items=[
         {
-            "description": "Consultoría",
+            "description": "Servicio de consultoría",
             "price": 10000.00,
             "indicador_facturacion": "1",  # ITBIS 18%
         },
         {
-            "description": "Servicio exento",
+            "description": "Caja de madera (exento)",
             "price": 5000.00,
             "indicador_facturacion": "4",  # Exento
         },
     ],
     doc_type="31",
-    secuencia="0000490945",               # NCF asignado por la DGII
+    secuencia="0000490963",               # NCF asignado por la DGII
     fecha_vencimiento_secuencia="2028-12-31",
+    url_to_send="https://www.unolet.com",  # opcional
 )
 print(f"NCF: {result.number}")        # "E310000490960"
 print(f"Auth: {result.auth_number}")  # UUID
 
 # Factura de Consumo (e-CF tipo 32)
 result = client.invoice(
-    buyer="40221201896",
+    buyer="40221201896",  # RNC o Cédula
     items=[{"description": "Producto", "price": 500.00, "indicador_facturacion": "1"}],
     doc_type="32",
-    secuencia="0000490946",
+    secuencia="0000490964",
     fecha_vencimiento_secuencia="2028-12-31",
 )
 
@@ -177,6 +187,7 @@ doc = client.get_document(result.auth_number, fmt="XML")
 >   `indicador_facturacion`.
 > - No existe `"CF"` (Consumidor Final). El comprador siempre necesita
 >   RNC o Cédula.
+> - `Payments` **no se incluye** en el payload por defecto.
 > - `cancel()` **no está disponible** para DO.
 
 ---
@@ -187,14 +198,14 @@ doc = client.get_document(result.auth_number, fmt="XML")
 
 | Parámetro | Tipo | Por defecto | Descripción |
 |-----------|------|-------------|-------------|
-| `taxid` | `str` | **requerido** | GT: NIT (dígitos o con separadores). DO: RNC (9 dígitos, sin guiones). |
+| `taxid` | `str` | **requerido** | GT: NIT. DO: RNC (9 dígitos, sin guiones). |
 | `username` | `str` | **requerido** | Usuario Digifact (sin prefijo `GT.` / `DO.`). |
 | `password` | `str` | `""` | Contraseña. Requerido si no se provee `token`. |
 | `token` | `str` | `""` | Bearer token preobtenido. |
 | `country` | `str` | `"GT"` | `"GT"` o `"DO"`. |
 | `environment` | `str` | `"test"` | `"test"` o `"production"`. |
-| `seller_name` | `str` | `""` | Nombre del emisor. Auto-consulta si se omite. |
-| `seller_address` | `str` | `""` | Dirección del emisor. Auto-consulta si se omite. |
+| `seller_name` | `str` | `""` | Nombre/Razón Social del emisor. Se auto-consulta si se omite. |
+| `seller_address` | `str` | `""` | Dirección del emisor. Se auto-consulta si se omite (GT). |
 | `timeout` | `int` | `120` | Timeout HTTP en segundos. |
 
 ### Específicos de Guatemala (se ignoran si `country="DO"`)
@@ -211,13 +222,6 @@ doc = client.get_document(result.auth_number, fmt="XML")
 | `petroleo_rates` | `dict[str, float] \| None` | `None` | Tarifas PETROLEO (gasolineras). |
 | `tipo_personeria` | `str` | `"1"` | Sólo aplica a RDON. |
 | `session` | `requests.Session \| None` | `None` | Sesión HTTP personalizada. |
-
-### Específicos de República Dominicana (se ignoran si `country="GT"`)
-
-| Parámetro | Tipo | Por defecto | Descripción |
-|-----------|------|-------------|-------------|
-| `seller_name` | `str` | `""` | Razón Social del emisor. |
-| `seller_address` | `str` | `""` | Dirección del emisor. |
 
 ---
 
@@ -240,19 +244,43 @@ doc = client.get_document(result.auth_number, fmt="XML")
 
 ```python
 {
-    "description": str,                    # requerido
-    "price": float | Decimal,              # requerido — NETO (sin ITBIS)
-    "indicador_facturacion": str,           # "1"=ITBIS 18%, "2"=16%, "3"=0%, "4"=Exento
-    "qty": float | Decimal,                # opcional, por defecto 1
-    "type": str,                            # "1" (default) | otros códigos DGII
-    "unit_of_measure": str,                 # "UNI" (default), "kg", "litro", etc.
-    "discount": float | None,              # descuento de línea
-    "ean": str,                             # código EAN (opcional)
-    "plu": str,                             # código PLU (opcional)
-    "charge": float | None,                # cargo adicional (opcional)
-    "descripcion_item": str,               # descripción extendida (opcional)
+    "description": str,                     # requerido
+    "price": float | Decimal,               # requerido — NETO (sin ITBIS)
+    "indicador_facturacion": str,            # "1"=ITBIS 18%, "2"=16%, "3"=0%, "4"=Exento
+    "qty": float | Decimal,                 # opcional, por defecto 1
+    "type": str,                             # "1" (default) | "2" = Producto
+    "unit_of_measure": str,                  # "UNI" (default), "kg", "litro", etc.
+    "discount": float | None,               # descuento de línea
+    "ean": str,                              # código EAN (opcional)
+    "plu": str,                              # código PLU (opcional)
+    "charge": float | None,                 # cargo adicional (opcional)
+    "descripcion_item": str,                # descripción extendida (opcional)
 }
 ```
+
+> ℹ️ Los valores en el payload se envían como **strings**: `qty="1"`, `price="342604.97"`.
+
+---
+
+## Parámetros específicos de `invoice()` para DO
+
+Estos parámetros se pasan como `**kwargs` al llamar `client.invoice(...)`:
+
+| Parámetro | Default | Descripción |
+|-----------|---------|-------------|
+| `secuencia` | **requerido** | NCF asignado por la DGII (ej. `"0000490963"`). |
+| `fecha_vencimiento_secuencia` | **requerido** | Fecha vencimiento NCF (ej. `"2028-12-31"`). |
+| `indicador_monto_gravado` | `"0"` | `"0"` o `"1"`. |
+| `tipo_ingresos` | `"01"` | Código catálogo DGII. |
+| `tipo_pago` | `"1"` | `"1"` = Contado. |
+| `fecha_desde` | `None` | Fecha inicio (opcional). |
+| `fecha_hasta` | `None` | Fecha fin (opcional). |
+| `numero_factura_interna` | `""` | Número interno (opcional). |
+| `seller_additionl_info` | `None` | Lista `[{"Name": ..., "Value": ...}]`. |
+| `seller_branch_name` | `"0001"` | Nombre sucursal. |
+| `url_to_send` | `None` | URL en `AdditionalDocumentInfo` (opcional). |
+| `payments` | `None` | Lista de pagos. **No se incluye** si no se provee. |
+| `issue_dt` | `None` | `IssuedDateTime`. Default = hora actual DO sin offset. |
 
 ---
 
@@ -306,12 +334,87 @@ base_imponible = total_linea                  ← = total_linea (para ítems gra
 monto_itbis    = base_imponible × tasa / 100
 ```
 
-| Indicador | Tasa | Código |
-|:---------:|:----:|:------:|
+| Indicador | Tasa | Código en `TotalTaxes` |
+|:---------:|:----:|:----------------------:|
 | `"1"` | 18% | `ITBIS1` |
 | `"2"` | 16% | `ITBIS2` |
 | `"3"` | 0% | `ITBIS3` |
-| `"4"` | Exento | — |
+| `"4"` | Exento | `EXENTO` (Amount = line_total) |
+
+> ℹ️ Para ítems exentos (`"4"`), se incluye un `TotalTax` con `Code: "EXENTO"`
+> donde `Amount = line_total` y `TaxableAmount = "0"`. Esto coincide con el
+> formato validado por la API de Digifact DO.
+
+---
+
+## Estructura del payload DO
+
+El JSON NUC que se envía a `/v2/transform/nuc_json` tiene esta estructura:
+
+```json
+{
+  "Version": "1.0",
+  "CountryCode": "DO",
+  "Header": {
+    "DocType": "31",
+    "IssuedDateTime": "2026-05-06T00:00:00",
+    "AdditionalIssueDocInfo": [
+      {"Name": "Secuencia", "Value": "0000490963"},
+      {"Name": "FechaVencimientoSecuencia", "Value": "2028-12-31"},
+      {"Name": "IndicadorMontoGravado", "Value": "0"},
+      {"Name": "TipoIngresos", "Value": "01"},
+      {"Name": "TipoPago", "Value": "1"},
+      {"Name": "FechaDesde", "Value": "2026-05-01"},
+      {"Name": "FechaHasta", "Value": "2027-05-01"}
+    ]
+  },
+  "Seller": {
+    "TaxID": "132752155",
+    "Name": "EMPRESA DE PRUEBA S.A.",
+    "AdditionlInfo": [{"Name": "NumeroFacturaInterna", "Value": "0000490963"}],
+    "BranchInfo": {
+      "Name": "0001",
+      "AddressInfo": {"Address": "...", "District": "", "State": "", "Country": ""}
+    }
+  },
+  "Buyer": {
+    "TaxID": "132232798", "TaxIDType": null,
+    "Name": "UNOLET SRL",
+    "EmailList": {"Email": ["info@unolet.com"]},
+    "Website": "https://www.unolet.com",
+    "AddressInfo": {"Address": "...", "District": "", "State": "", "Country": "DO"}
+  },
+  "Items": [{
+    "Type": "2", "Description": "CAJA DE MADERA",
+    "Qty": "1", "Price": "342604.97",
+    "Discounts": null, "Taxes": null, "Charges": null,
+    "Totals": {"TotalItem": "342604.97"},
+    "AdditionalInfo": [{"Name": "IndicadorFacturacion", "Value": "4"}]
+  }],
+  "Totals": {
+    "TotalTaxableAmount": "0.00",
+    "TotalTaxes": {
+      "TotalTax": [{
+        "Code": "EXENTO",
+        "TaxableAmount": "0", "Rate": "0", "Amount": "342604.97"
+      }]
+    },
+    "GrandTotal": {"InvoiceTotal": "342604.97"},
+    "AdditionalInfo": [{"Name": "", "Value": ""}]
+  },
+  "AdditionalDocumentInfo": {
+    "AdditionalInfo": [{
+      "AditionalInfo": [{"Name": "UrlToSend", "Value": "https://www.unolet.com"}],
+      "AditionalData": {
+        "Data": [{"Name": "INFORMACION_REFERENCIA", "Id": 0, "Info": [{"Name": "", "Value": ""}]}]
+      }
+    }]
+  }
+}
+```
+
+> ⚠️ Nota sobre la ortografía: la API de Digifact DO usa `AdditionlInfo` y
+> `AditionalInfo` (sin la segunda 'd') — son intencionales, no errores.
 
 ---
 
@@ -381,7 +484,6 @@ client.invoice("CF", items, tipo_frase="1", escenario="1")
 # Nueva API: frases múltiples
 client.fuel_invoice("CF", items, frases=[
     {"tipo_frase": "1", "escenario": "1"},
-    {"tipo_frase": "9", "escenario": "18"},
 ])
 ```
 
@@ -451,7 +553,7 @@ python -m pytest tests/ -v
 | `DIGIFACT_PASSWORD` | Contraseña |
 | `DIGIFACT_COUNTRY` | `"GT"` (default) o `"DO"` |
 | `DIGIFACT_ENVIRONMENT` | `"test"` (default) o `"production"` |
-| `DIGIFACT_DISABLE_AUTO_FUEL_SUBSIDY_FRASES` | `"1"` para deshabilitar frases de subsidio |
+| `DIGIFACT_DISABLE_AUTO_FUEL_SUBSIDY_FRASES` | `"1"` para deshabilitar frases de subsidio (GT) |
 
 ---
 
@@ -464,11 +566,11 @@ Todos los métodos de emisión devuelven `DteResult` con los campos:
 
 | Método | GT | DO | Descripción |
 |--------|:--:|:--:|-------------|
-| `invoice()` | ✔ | ✔ | Emitir factura / e-CF |
-| `credit_note()` | ✔ | ✔ | Nota de crédito |
-| `debit_note()` | ✔ | ✔ | Nota de débito |
-| `get_document()` | ✔ | ✔ | Descargar documento (XML/HTML/PDF) |
-| `cancel()` | ✔ | ❌ | Anular DTE (no disponible en DO) |
+| `invoice(buyer, items, **kwargs)` | ✔ | ✔ | Emitir factura / e-CF |
+| `credit_note(buyer, items, origin, reason, **kwargs)` | ✔ | ✔ | Nota de crédito |
+| `debit_note(buyer, items, origin, reason, **kwargs)` | ✔ | ✔ | Nota de débito |
+| `get_document(auth_number, fmt="XML")` | ✔ | ✔ | Descargar documento (XML/HTML/PDF) |
+| `cancel(...)` | ✔ | ❌ | Anular DTE (no disponible en DO) |
 
 ### Solo Guatemala
 

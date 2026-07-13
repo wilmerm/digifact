@@ -154,12 +154,14 @@ class DoInvoiceTotals:
         )
 
     def build_taxes(self) -> list[dict]:
-        """Build the ``TotalTaxes.TotalTax[]`` list grouped by tax code."""
+        """Build the ``TotalTaxes.TotalTax[]`` list grouped by tax code.
+
+        For EXENTO items, the ``Amount`` field contains the line total
+        (as confirmed by working DO API payloads).
+        """
         groups: dict[str, dict] = {}
         for line in self.lines:
             code = line.tax_code
-            if code == "EXENTO":
-                continue
             rate = line.itbis_rate
             if code not in groups:
                 groups[code] = {
@@ -168,29 +170,39 @@ class DoInvoiceTotals:
                     "Rate": rate,
                     "Amount": Decimal("0"),
                 }
-            groups[code]["TaxableAmount"] = (groups[code]["TaxableAmount"] + line.taxable_amount).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
-            groups[code]["Amount"] = (groups[code]["Amount"] + line.itbis_amount).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
+            if code == "EXENTO":
+                # EXENTO: Amount = line_total, TaxableAmount = 0
+                groups[code]["Amount"] = (groups[code]["Amount"] + line.line_total).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+            else:
+                groups[code]["TaxableAmount"] = (groups[code]["TaxableAmount"] + line.taxable_amount).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                groups[code]["Amount"] = (groups[code]["Amount"] + line.itbis_amount).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
         result = []
         for g in groups.values():
             result.append({
                 "Code": g["Code"],
-                "TaxableAmount": float(g["TaxableAmount"]),
-                "Rate": float(g["Rate"]),
-                "Amount": float(g["Amount"]),
+                "TaxableAmount": str(g["TaxableAmount"]),
+                "Rate": str(g["Rate"]),
+                "Amount": str(g["Amount"]),
             })
         return result
 
     def to_totals_block(self) -> dict:
-        """Build the full ``Totals`` JSON block."""
+        """Build the full ``Totals`` JSON block.
+
+        All monetary values are returned as strings with 2 decimal places,
+        matching the format confirmed working with the Digifact DO API.
+        """
         taxes = self.build_taxes()
         block: dict[str, Any] = {
-            "TotalTaxableAmount": float(self.total_taxable),
+            "TotalTaxableAmount": fmt(self.total_taxable, decimals=2),
             "GrandTotal": {
-                "InvoiceTotal": float(self.grand_total),
+                "InvoiceTotal": fmt(self.grand_total, decimals=2),
             },
         }
         if taxes:
