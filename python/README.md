@@ -1,6 +1,37 @@
-# Digifact FEL Guatemala — SDK para Python
+# Digifact FEL SDK — Multi-país (Python)
 
-SDK en Python para la API de facturación electrónica en línea (FEL) de Guatemala de [Digifact](https://www.digifact.com.gt/).
+SDK en Python para la API Digifact FEL — facturación electrónica en
+**Guatemala** (SAT) y **República Dominicana** (DGII).
+
+[![PyPI](https://img.shields.io/pypi/v/digifact-sdk)](https://pypi.org/p/digifact-sdk)
+[![Python](https://img.shields.io/pypi/pyversions/digifact-sdk)](https://pypi.org/p/digifact-sdk)
+
+---
+
+## Índice
+
+- [Instalación](#instalación)
+- [Inicio rápido — Guatemala](#inicio-rápido--guatemala)
+- [Inicio rápido — República Dominicana](#inicio-rápido--república-dominicana)
+- [Parámetros del cliente](#parámetros-del-cliente)
+- [Campos del ítem](#campos-del-ítem)
+  - [Guatemala](#guatemala)
+  - [República Dominicana](#república-dominicana-1)
+- [Parámetros específicos de `invoice()` para DO](#parámetros-específicos-de-invoice-para-do)
+- [Tipos de documento](#tipos-de-documento)
+- [Cálculo de impuestos](#cálculo-de-impuestos)
+  - [IVA Guatemala](#iva-guatemala)
+  - [ITBIS República Dominicana](#itbis-república-dominicana)
+- [Estructura del payload DO](#estructura-del-payload-do)
+- [Facturas de combustible (solo GT)](#facturas-de-combustible-solo-gt)
+- [Configuración de frases (solo GT)](#configuración-de-frases-solo-gt)
+- [Establecimiento / sucursal (solo GT)](#establecimiento--sucursal-solo-gt)
+- [Manejo de errores](#manejo-de-errores)
+- [Ejecutar las pruebas](#ejecutar-las-pruebas)
+- [Variables de entorno](#variables-de-entorno)
+- [Referencia de métodos](#referencia-de-métodos)
+
+---
 
 ## Instalación
 
@@ -14,32 +45,12 @@ O desde el código fuente:
 pip install -e python/
 ```
 
-## Configuración del cliente (`DigifactClient(...)`)
+---
 
-Ordenados de más usados a menos usados.
+## Inicio rápido — Guatemala
 
-| Parámetro | Tipo | Por defecto | Descripción |
-|-----------|------|-------------|-------------|
-| `taxid` | `str` | **requerido** | NIT del emisor. Acepta dígitos o con separadores (`"12345678"`, `"1234567-8"`); los no-dígitos se eliminan. Se rellena internamente a 12 caracteres. |
-| `username` | `str` | **requerido** | Usuario corto de Digifact (la parte después de `GT.<NIT>.`, p. ej. `"FELUSER"`). |
-| `password` | `str` | `""` | Contraseña de la cuenta. **Requerido** si no se provee `token`. |
-| `token` | `str` | `""` | Bearer token preobtenido. Si se provee, se omite el login. |
-| `environment` | `str` | `"test"` | `"test"` o `"production"`. |
-| `seller_name` | `str` | `""` | Nombre del emisor. Para NIT individual es el nombre de la persona; para S.A. / S.E. es la razón social de la entidad. Si está vacío, se consulta en SAT vía `lookup_nit()`. |
-| `seller_address` | `str` | `""` | Dirección del emisor. Si está vacía, se consulta en SAT. |
-| `branch_code` | `str` | `"1"` | **Código del establecimiento** del RTU. Un NIT puede tener varios establecimientos (1, 2, 3…). Se escribe en `Seller.BranchInfo.Code`. |
-| `branch_name` | `str` | `"ESTABLECIMIENTO PRINCIPAL"` | **Nombre comercial** de la sucursal — el mismo que aparece en la patente de comercio. Se escribe en `Seller.BranchInfo.Name`. |
-| `afiliacion_iva` | `str` | `"GEN"` | Afiliación IVA del RTU: `"GEN"`, `"PEQ"` o `"EXE"`. |
-| `tipo_frase` | `str \| None` | `None` | Sobreescritura global de `TipoFrase` (legacy). **Mutuamente exclusivo con `frases`**. Ver [frases](#configuración-de-frases-tipofrase--codigoescenario). |
-| `escenario` | `str \| None` | `None` | Sobreescritura global de `CodigoEscenario` (legacy). **Mutuamente exclusivo con `frases`**. |
-| `frases` | `list[dict] \| None` | `None` | Lista de frases `{"tipo_frase": ..., "escenario": ...}`. Reemplaza a `tipo_frase`/`escenario`. **Mutuamente exclusivo** con ellos. Ver [frases](#configuración-de-frases-tipofrase--codigoescenario). |
-| `auto_fuel_subsidy_frases` | `bool \| None` | `None` | Controla la auto-inyección de frases 9/18 y 9/19 en facturas de combustible durante el periodo de subsidio. `None` = usar default (`True`). Ver [subsidio combustible](#subsidio-combustible-frases-automaticas). |
-| `petroleo_rates` | `dict[str, float] \| None` | `None` | Mapa código PETROLEO → tarifa por unidad. Usado sólo por `fuel_invoice()` (gasolineras). |
-| `timeout` | `int` | `120` | Timeout HTTP en segundos. |
-| `session` | `requests.Session \| None` | `None` | Sesión HTTP personalizada (útil para tests). |
-| `tipo_personeria` | `str` | `"1"` | Código de `TipoPersoneria` del RTU. **Sólo aplica a RDON** (Recibo por Donación); ignóralo en los demás documentos. |
-
-## Inicio rápido
+> `country="GT"` es el valor por defecto. Las integraciones existentes
+> **no requieren cambios**.
 
 ```python
 from digifact_sdk import DigifactClient
@@ -67,27 +78,6 @@ result = client.invoice(
     ]
 )
 
-# FACT a receptor con CUI
-result = client.invoice(
-    buyer={"taxid": "3730617490101", "type": "CUI", "name": "Juan Pérez"},
-    items=[{"description": "Producto", "qty": 2, "price": 50.00}]
-)
-
-# Receptor NIT con datos explícitos (sin consulta automática)
-result = client.invoice(
-    buyer={
-        "taxid":    "12345678",
-        "name":     "EMPRESA EJEMPLO S.A.",
-        "address":  "6 AV 6-48 ZONA 9",
-        "city":     "01009",
-        "district": "GUATEMALA",
-        "state":    "GUATEMALA",
-        "country":  "GT",
-        "email":    "facturacion@empresa.com",  # opcional
-    },
-    items=[{"description": "Producto", "qty": 1, "price": 100.00}]
-)
-
 # FCAM (Factura Cambiaria)
 result = client.invoice(
     buyer="12345678",
@@ -109,43 +99,199 @@ result = client.credit_note(
     reason="Producto defectuoso"
 )
 
-# Nota de débito (NDEB)
-result = client.debit_note(
-    buyer="12345678",
-    items=[{"description": "Cargo adicional", "qty": 1, "price": 50.00}],
-    origin={...},
-    reason="Cargo por entrega express"
-)
-
-# Anular un DTE
-result = client.cancel(
-    auth_number="XXXXXXXX-...",
-    receiver_id="CF",
-    issue_datetime="2026-03-18 21:40:14",
-    reason="Error en monto"
-)
-
-# Nota de crédito total
-result = client.credit_note_total(
-    auth_number="XXXXXXXX-...",
-    issue_datetime="2026-03-18 21:40:14",
-    reason="Nota de crédito total"
-)
-
 # Consulta de NIT
 info = client.lookup_nit("12345678")
 print(info["name"])
-
-# Obtener DTE
-doc = client.get_dte("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX")
 ```
+
+---
+
+## Inicio rápido — República Dominicana
+
+> Usa `country="DO"` para emitir comprobantes fiscales electrónicos (e-CF)
+> ante la DGII.
+
+```python
+from digifact_sdk import DigifactClient
+
+client = DigifactClient(
+    taxid="123456789",         # RNC del emisor (9 dígitos, sin guiones)
+    username="TESTUSERUNO",
+    password="*****",
+    country="DO",               # ← obligatorio
+    environment="test",         # "test" o "production"
+)
+
+# Factura de Crédito Fiscal Electrónica (e-CF tipo 31)
+result = client.invoice(
+    buyer={
+        "taxid": "132232798",
+        "name": "UNOLET SRL",
+        "email": "info@unolet.com",
+        "website": "https://www.unolet.com",
+        "address": "Dirección de prueba",
+        "country": "DO",
+    },
+    items=[
+        {
+            "description": "Servicio de consultoría",
+            "price": 10000.00,
+            "indicador_facturacion": "1",  # ITBIS 18%
+        },
+        {
+            "description": "Caja de madera (exento)",
+            "price": 5000.00,
+            "indicador_facturacion": "4",  # Exento
+        },
+    ],
+    doc_type="31",
+    secuencia="0000490963",               # NCF asignado por la DGII
+    fecha_vencimiento_secuencia="2028-12-31",
+    url_to_send="https://www.unolet.com",  # opcional
+)
+print(f"NCF: {result.number}")        # "E310000490960"
+print(f"Auth: {result.auth_number}")  # UUID
+
+# Factura de Consumo (e-CF tipo 32)
+result = client.invoice(
+    buyer="40221201896",  # RNC o Cédula
+    items=[{"description": "Producto", "price": 500.00, "indicador_facturacion": "1"}],
+    doc_type="32",
+    secuencia="0000490964",
+    fecha_vencimiento_secuencia="2028-12-31",
+)
+
+# Nota de Crédito (e-CF tipo 34)
+result = client.credit_note(
+    buyer="40221201896",
+    items=[{"description": "Devolución", "price": 1000.00, "indicador_facturacion": "1"}],
+    origin={
+        "auth_number": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+        "date": "2026-06-01",
+        "series": "E310",
+        "number": "0000490945",
+    },
+    reason="Devolución total",
+    secuencia="0000490947",
+    fecha_vencimiento_secuencia="2028-12-31",
+)
+
+# Descargar XML
+doc = client.get_document(result.auth_number, fmt="XML")
+```
+
+> ⚠️ **Importante:**
+> - `taxid` es el **RNC** (9 dígitos, sin guiones).
+> - Siempre se requiere `secuencia` (NCF) y `fecha_vencimiento_secuencia`.
+> - Los precios son **netos** (sin ITBIS). El impuesto se calcula según
+>   `indicador_facturacion`.
+> - No existe `"CF"` (Consumidor Final). El comprador siempre necesita
+>   RNC o Cédula.
+> - `Payments` **no se incluye** en el payload por defecto.
+> - `cancel()` **no está disponible** para DO.
+
+---
+
+## Parámetros del cliente
+
+### Comunes
+
+| Parámetro | Tipo | Por defecto | Descripción |
+|-----------|------|-------------|-------------|
+| `taxid` | `str` | **requerido** | GT: NIT. DO: RNC (9 dígitos, sin guiones). |
+| `username` | `str` | **requerido** | Usuario Digifact (sin prefijo `GT.` / `DO.`). |
+| `password` | `str` | `""` | Contraseña. Requerido si no se provee `token`. |
+| `token` | `str` | `""` | Bearer token preobtenido. |
+| `country` | `str` | `"GT"` | `"GT"` o `"DO"`. |
+| `environment` | `str` | `"test"` | `"test"` o `"production"`. |
+| `seller_name` | `str` | `""` | Nombre/Razón Social del emisor. Se auto-consulta si se omite. |
+| `seller_address` | `str` | `""` | Dirección del emisor. Se auto-consulta si se omite (GT). |
+| `timeout` | `int` | `120` | Timeout HTTP en segundos. |
+
+### Específicos de Guatemala (se ignoran si `country="DO"`)
+
+| Parámetro | Tipo | Por defecto | Descripción |
+|-----------|------|-------------|-------------|
+| `branch_code` | `str` | `"1"` | Código del establecimiento (RTU). |
+| `branch_name` | `str` | `"ESTABLECIMIENTO PRINCIPAL"` | Nombre comercial de la sucursal. |
+| `afiliacion_iva` | `str` | `"GEN"` | `"GEN"`, `"PEQ"` o `"EXE"`. |
+| `tipo_frase` | `str \| None` | `None` | Override global de `TipoFrase`. |
+| `escenario` | `str \| None` | `None` | Override global de `CodigoEscenario`. |
+| `frases` | `list[dict] \| None` | `None` | Lista `{"tipo_frase", "escenario"}`. |
+| `auto_fuel_subsidy_frases` | `bool \| None` | `None` | Auto-inyección frases 9/18 y 9/19. |
+| `petroleo_rates` | `dict[str, float] \| None` | `None` | Tarifas PETROLEO (gasolineras). |
+| `tipo_personeria` | `str` | `"1"` | Sólo aplica a RDON. |
+| `session` | `requests.Session \| None` | `None` | Sesión HTTP personalizada. |
+
+---
+
+## Campos del ítem
+
+### Guatemala
+
+```python
+{
+    "description": str,          # requerido
+    "price": float | Decimal,    # requerido — incluye IVA
+    "qty": float | Decimal,      # opcional, por defecto 1
+    "type": str,                  # "Servicio" (default) | "Bien"
+    "unit_of_measure": str,       # por defecto "UNI"
+    "discount": float | None,     # descuento de línea
+}
+```
+
+### República Dominicana
+
+```python
+{
+    "description": str,                     # requerido
+    "price": float | Decimal,               # requerido — NETO (sin ITBIS)
+    "indicador_facturacion": str,            # "1"=ITBIS 18%, "2"=16%, "3"=0%, "4"=Exento
+    "qty": float | Decimal,                 # opcional, por defecto 1
+    "type": str,                             # "1" (default) | "2" = Producto
+    "unit_of_measure": str,                  # "UNI" (default), "kg", "litro", etc.
+    "discount": float | None,               # descuento de línea
+    "ean": str,                              # código EAN (opcional)
+    "plu": str,                              # código PLU (opcional)
+    "charge": float | None,                 # cargo adicional (opcional)
+    "descripcion_item": str,                # descripción extendida (opcional)
+}
+```
+
+> ℹ️ Los valores en el payload se envían como **strings**: `qty="1"`, `price="342604.97"`.
+
+---
+
+## Parámetros específicos de `invoice()` para DO
+
+Estos parámetros se pasan como `**kwargs` al llamar `client.invoice(...)`:
+
+| Parámetro | Default | Descripción |
+|-----------|---------|-------------|
+| `secuencia` | **requerido** | NCF asignado por la DGII (ej. `"0000490963"`). |
+| `fecha_vencimiento_secuencia` | **requerido** | Fecha vencimiento NCF (ej. `"2028-12-31"`). |
+| `indicador_monto_gravado` | `"0"` | `"0"` o `"1"`. |
+| `tipo_ingresos` | `"01"` | Código catálogo DGII. |
+| `tipo_pago` | `"1"` | `"1"` = Contado. |
+| `fecha_desde` | `None` | Fecha inicio (opcional). |
+| `fecha_hasta` | `None` | Fecha fin (opcional). |
+| `numero_factura_interna` | `""` | Número interno (opcional). |
+| `seller_additionl_info` | `None` | Lista `[{"Name": ..., "Value": ...}]`. |
+| `seller_branch_name` | `"0001"` | Nombre sucursal. |
+| `url_to_send` | `None` | URL en `AdditionalDocumentInfo` (opcional). |
+| `payments` | `None` | Lista de pagos. **No se incluye** si no se provee. |
+| `issue_dt` | `None` | `IssuedDateTime`. Default = hora actual DO sin offset. |
+
+---
 
 ## Tipos de documento
 
+### Guatemala
+
 | Tipo | Descripción | IVA |
-|------|-------------|-----|
+|------|-------------|:---:|
 | `FACT` | Factura estándar | Sí |
-| `FCAM` | Factura Cambiaria (con abonos) | Sí |
+| `FCAM` | Factura Cambiaria | Sí |
 | `NDEB` | Nota de débito | Sí |
 | `NCRE` | Nota de crédito | Sí |
 | `NABN` | Nota de abono | No |
@@ -155,9 +301,22 @@ doc = client.get_dte("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX")
 | `RECI` | Recibo universitario | No |
 | `CCA` | Cobro por cuenta ajena | Sí |
 
-## Cálculo del IVA
+### República Dominicana
 
-Los precios incluyen IVA (es lo que paga el cliente):
+| Tipo | Descripción | ITBIS |
+|:----:|-------------|:-----:|
+| `31` | Factura de Crédito Fiscal Electrónica | Sí |
+| `32` | Factura de Consumo Electrónica | Sí |
+| `33` | Nota de Débito Electrónica | Sí |
+| `34` | Nota de Crédito Electrónica | Sí |
+
+---
+
+## Cálculo de impuestos
+
+### IVA Guatemala
+
+Los precios **incluyen IVA** (es lo que paga el cliente):
 
 ```
 total_linea    = qty × price
@@ -165,51 +324,122 @@ base_imponible = total_linea / 1.12
 monto_iva      = total_linea − base_imponible
 ```
 
-Todos los montos se formatean como cadenas con 6 decimales.
+### ITBIS República Dominicana
 
-## Campos del ítem
+Los precios son **netos** (sin ITBIS). El impuesto se calcula por fuera:
 
-```python
+```
+total_linea    = qty × price                 ← sin ITBIS
+base_imponible = total_linea                  ← = total_linea (para ítems gravados)
+monto_itbis    = base_imponible × tasa / 100
+```
+
+| Indicador | Tasa | Código en `TotalTaxes` |
+|:---------:|:----:|:----------------------:|
+| `"1"` | 18% | `ITBIS1` |
+| `"2"` | 16% | `ITBIS2` |
+| `"3"` | 0% | `ITBIS3` |
+| `"4"` | Exento | `EXENTO` (Amount = line_total) |
+
+> ℹ️ Para ítems exentos (`"4"`), se incluye un `TotalTax` con `Code: "EXENTO"`
+> donde `Amount = line_total` y `TaxableAmount = "0"`. Esto coincide con el
+> formato validado por la API de Digifact DO.
+
+---
+
+## Estructura del payload DO
+
+El JSON NUC que se envía a `/v2/transform/nuc_json` tiene esta estructura:
+
+```json
 {
-    "description": str,          # requerido
-    "price": float | Decimal,    # requerido — precio unitario, incluye IVA
-    "qty": float | Decimal,      # opcional, por defecto 1
-    "type": str,                  # opcional: "Servicio" (por defecto) | "Bien"
-    "unit_of_measure": str,       # opcional, por defecto "UNI"
-    "discount": float | None,     # opcional — descuento de la línea
+  "Version": "1.0",
+  "CountryCode": "DO",
+  "Header": {
+    "DocType": "31",
+    "IssuedDateTime": "2026-05-06T00:00:00",
+    "AdditionalIssueDocInfo": [
+      {"Name": "Secuencia", "Value": "0000490963"},
+      {"Name": "FechaVencimientoSecuencia", "Value": "2028-12-31"},
+      {"Name": "IndicadorMontoGravado", "Value": "0"},
+      {"Name": "TipoIngresos", "Value": "01"},
+      {"Name": "TipoPago", "Value": "1"},
+      {"Name": "FechaDesde", "Value": "2026-05-01"},
+      {"Name": "FechaHasta", "Value": "2027-05-01"}
+    ]
+  },
+  "Seller": {
+    "TaxID": "132752155",
+    "Name": "EMPRESA DE PRUEBA S.A.",
+    "AdditionlInfo": [{"Name": "NumeroFacturaInterna", "Value": "0000490963"}],
+    "BranchInfo": {
+      "Name": "0001",
+      "AddressInfo": {"Address": "...", "District": "", "State": "", "Country": ""}
+    }
+  },
+  "Buyer": {
+    "TaxID": "132232798", "TaxIDType": null,
+    "Name": "UNOLET SRL",
+    "EmailList": {"Email": ["info@unolet.com"]},
+    "Website": "https://www.unolet.com",
+    "AddressInfo": {"Address": "...", "District": "", "State": "", "Country": "DO"}
+  },
+  "Items": [{
+    "Type": "2", "Description": "CAJA DE MADERA",
+    "Qty": "1", "Price": "342604.97",
+    "Discounts": null, "Taxes": null, "Charges": null,
+    "Totals": {"TotalItem": "342604.97"},
+    "AdditionalInfo": [{"Name": "IndicadorFacturacion", "Value": "4"}]
+  }],
+  "Totals": {
+    "TotalTaxableAmount": "0.00",
+    "TotalTaxes": {
+      "TotalTax": [{
+        "Code": "EXENTO",
+        "TaxableAmount": "0", "Rate": "0", "Amount": "342604.97"
+      }]
+    },
+    "GrandTotal": {"InvoiceTotal": "342604.97"},
+    "AdditionalInfo": [{"Name": "", "Value": ""}]
+  },
+  "AdditionalDocumentInfo": {
+    "AdditionalInfo": [{
+      "AditionalInfo": [{"Name": "UrlToSend", "Value": "https://www.unolet.com"}],
+      "AditionalData": {
+        "Data": [{"Name": "INFORMACION_REFERENCIA", "Id": 0, "Info": [{"Name": "", "Value": ""}]}]
+      }
+    }]
+  }
 }
 ```
 
-## Facturas de combustible (FACT Combustible)
+> ⚠️ Nota sobre la ortografía: la API de Digifact DO usa `AdditionlInfo` y
+> `AditionalInfo` (sin la segunda 'd') — son intencionales, no errores.
+
+---
+
+## Facturas de combustible (solo GT)
 
 Las facturas de combustible emiten IVA **y** un impuesto PETROLEO según la
-especificación de SAT. Los ítems sin `petroleo_amount` se tratan como ítems
-regulares (sólo IVA) y pueden coexistir en la misma factura.
+especificación de SAT.
 
-### Opción A — tarifas fijadas al inicializar el cliente (recomendada para gasolineras)
+### Opción A — tarifas fijadas al inicializar el cliente
 
 ```python
-# Fijar tarifas PETROLEO una sola vez por tipo de combustible (Q/galón, según MEM o factura del proveedor)
 client = DigifactClient(
     taxid="12345678",
     username="FELUSER",
     password="secret",
-    petroleo_rates={"1": 4.70, "2": 4.60, "4": 1.30},  # SUPER / REGULAR / DIESEL
+    petroleo_rates={"1": 4.70, "2": 4.60, "4": 1.30},
 )
-
-# Sólo hace falta petroleo_code — petroleo_amount se completa automáticamente
 result = client.fuel_invoice(
     buyer="CF",
     items=[
-        {"description": "GASOLINA SUPER",    "qty": 30, "price": 35.00, "petroleo_code": "1", "type": "Bien"},
-        {"description": "GASOLINA REGULAR",  "qty": 20, "price": 34.00, "petroleo_code": "2", "type": "Bien"},
-        {"description": "GASOLINA DIESEL",   "qty": 50, "price": 32.00, "petroleo_code": "4", "type": "Bien"},
-        # Ítems regulares (sin petroleo_code): sólo IVA, pueden coexistir
-        {"description": "FILTRO DE ACEITE",    "qty": 1, "price": 45.00,  "type": "Bien"},
-        {"description": "SET DE CANDELAS NGK", "qty": 1, "price": 400.00, "type": "Bien"},
+        {"description": "GASOLINA SUPER", "qty": 30, "price": 35.00,
+         "petroleo_code": "1", "type": "Bien"},
+        {"description": "FILTRO DE ACEITE", "qty": 1, "price": 45.00, "type": "Bien"},
     ],
 )
-print(result.auth_number)
 ```
 
 ### Opción B — monto explícito por ítem
@@ -218,140 +448,50 @@ print(result.auth_number)
 result = client.fuel_invoice(
     buyer="CF",
     items=[
-        {"description": "GASOLINA SUPER",   "qty": 1, "price": 35.00, "petroleo_amount": 4.70, "petroleo_code": "1", "type": "Bien"},
-        {"description": "GASOLINA DIESEL",  "qty": 1, "price": 32.00, "petroleo_amount": 1.30, "petroleo_code": "4", "type": "Bien"},
+        {"description": "GASOLINA SUPER", "qty": 1, "price": 35.00,
+         "petroleo_amount": 4.70, "petroleo_code": "1", "type": "Bien"},
     ],
 )
 ```
 
-### Campos del ítem de combustible
-
-| Campo | Tipo | Por defecto | Descripción |
-|-----|------|---------|-------------|
-| `description` | `str` | requerido | Descripción de la línea |
-| `price` | `float\|Decimal` | requerido | Precio unitario completo al consumidor (incluye PETROLEO + IVA). Es lo que paga el cliente en la bomba. Si la factura del proveedor muestra un precio unitario *sin* PETROLEO/IDP (p. ej. `37.99`), suma la tarifa IDP por unidad: `price = 37.99 + 4.70 = 42.69`. |
-| `qty` | `float\|Decimal` | `1` | Cantidad |
-| `type` | `str` | `"Servicio"` | `"Bien"` o `"Servicio"` |
-| `unit_of_measure` | `str` | `"UNI"` | Código de unidad de SAT |
-| `petroleo_amount` | `float\|Decimal` | — | Impuesto PETROLEO por unidad; omitir para ítems sólo-IVA |
-| `petroleo_code` | `str` | `"1"` | `"1"`=SUPER, `"2"`=REGULAR, `"4"`=DIESEL. Obligatorio cuando se omite `petroleo_amount` y `petroleo_rates` está configurado; lanza `DigifactValidationError` si el código no está en el diccionario de tarifas. |
-
 ### Subsidio combustible — frases automáticas
 
-Durante el **periodo de subsidio de combustibles** (2026-04-27 (incl.) a 2026-07-27 (excl.)), SAT exige incluir frases especiales `TipoFrase=9, Escenario=18` y `TipoFrase=9, Escenario=19` en las facturas de combustible. **El SDK las agrega automáticamente** cuando la fecha de emisión cae dentro de la ventana — no se necesita cambiar ningún código existente.
+Durante el **periodo de subsidio** (2026-04-27 a 2026-07-27), SAT exige
+incluir frases `TipoFrase=9, Escenario=18` y `TipoFrase=9, Escenario=19`.
+**El SDK las agrega automáticamente.**
 
 ```python
-# Sin cambios — el SDK agrega 9/18 y 9/19 automáticamente durante el subsidio
-result = client.fuel_invoice("CF", items)
-
-# Deshabilitarlo por llamada
+# Deshabilitar por llamada
 result = client.fuel_invoice("CF", items, auto_fuel_subsidy_frases=False)
 
-# Deshabilitarlo globalmente al construir el cliente
+# Deshabilitar globalmente
 client = DigifactClient(..., auto_fuel_subsidy_frases=False)
 
-# Deshabilitarlo sin tocar código (útil si el presupuesto se agota antes de la fecha)
-# DIGIFACT_DISABLE_AUTO_FUEL_SUBSIDY_FRASES=1  (variable de entorno)
-
-# Frases completamente personalizadas (deshabilita auto-inyección)
-result = client.fuel_invoice("CF", items, frases=[{"tipo_frase": "1", "escenario": "1"}])
+# Deshabilitar vía ENV VAR (sin deploy)
+# DIGIFACT_DISABLE_AUTO_FUEL_SUBSIDY_FRASES=1
 ```
 
-> **Nota:** `frases` y `tipo_frase`/`escenario` son **mutuamente exclusivos** — pasarlos juntos lanza `DigifactValidationError`.
+---
 
-## Configuración de frases (TipoFrase / CodigoEscenario)
+## Configuración de frases (solo GT)
 
-Todo DTE (excepto FESP) debe llevar un par `TipoFrase` + `CodigoEscenario`. El
-SDK elige valores por defecto adecuados, por lo que **no** hace falta
-configurar nada en el caso común.
-
-**Orden de precedencia:** argumentos por llamada → globales del constructor → tabla de valores por defecto.
-
-**Tabla de valores por defecto:**
-
-| DTE         | Afiliación | TipoFrase | CodigoEscenario | Notas |
-|-------------|-----------:|:---------:|:---------------:|-------|
-| FESP        | —          | —         | —               | Sin bloque `AdditionlInfo` |
-| FPEQ        | PEQ        | `2`       | `1`             | Pequeño contribuyente |
-| RDON        | cualquiera | `4`       | `4`             | Donaciones |
-| RECI        | cualquiera | `4`       | `5`             | Recibos (universidades) |
-| NABN        | cualquiera | `1`       | `1`             | Abonos |
-| FACT / FCAM / NCRE / NDEB | **GEN** | `1` | `1` | Por defecto: ISR **régimen sobre utilidades trimestrales** |
-| FACT / FCAM / NCRE / NDEB | PEQ | `2` | `1` | |
-| FACT / FCAM / NCRE / NDEB | EXE | `4` | `1` | Exento |
-
-### Nueva API: `frases[]` (múltiples frases)
-
-Usa `frases` cuando necesitas enviar **más de un par** TipoFrase/Escenario (p. ej. listados en resoluciones SAT). Es **mutuamente exclusivo** con `tipo_frase`/`escenario`.
+Ver la tabla de valores por defecto en el [README principal](../README.md#parámetros-del-cliente).
 
 ```python
-# Lista explícita de frases (deshabilita tipo_frase/escenario y auto-inyección)
+# API legacy: tipo_frase / escenario
+client.invoice("CF", items, tipo_frase="1", escenario="1")
+
+# Nueva API: frases múltiples
 client.fuel_invoice("CF", items, frases=[
     {"tipo_frase": "1", "escenario": "1"},
-    {"tipo_frase": "9", "escenario": "18"},
-    {"tipo_frase": "9", "escenario": "19"},
 ])
-
-# Globalmente en el constructor
-client = DigifactClient(
-    taxid="12345678", username="FELUSER", password="...",
-    frases=[{"tipo_frase": "1", "escenario": "2"}],  # ISR régimen opcional simplificado
-)
 ```
 
-> **Regla:** `frases` y `tipo_frase`/`escenario` son **mutuamente exclusivos** en cada nivel (por llamada y en el constructor). Combinarlos lanza `DigifactValidationError`.
+> `frases` y `tipo_frase`/`escenario` son **mutuamente exclusivos**.
 
-### API legacy: `tipo_frase` / `escenario`
+---
 
-Ambos parámetros siguen funcionando exactamente como antes para integraciones existentes.
-
-```python
-# Sobreescritura por llamada (uno o ambos)
-client.invoice("CF", items, escenario="1")
-client.invoice("CF", items, tipo_frase="2", escenario="1")
-
-# Funciona igual en los demás métodos de DTE
-client.credit_note("12345678", items, origin, "...", tipo_frase="2", escenario="1")
-client.fuel_invoice("CF", items, tipo_frase="2", escenario="1")
-
-# O globalmente al construir el cliente (p. ej. GEN + ISR régimen opcional simplificado)
-client = DigifactClient(
-    taxid="12345678", username="FELUSER", password="...",
-    afiliacion_iva="GEN",
-    tipo_frase="1",   # opcional — la tabla ya devuelve "1" para GEN
-    escenario="2",    # ISR régimen opcional simplificado (sobreescribe el "1" por defecto)
-)
-```
-
-Para descubrir el par correcto en un caso particular, revisa las afiliaciones
-del RTU en el portal de SAT.
-
-## Referencia de métodos
-
-Todos los métodos de emisión devuelven `DteResult` con `result.auth_number`, `series`, `number`, `issue_datetime`, `raw`.
-
-| Método | Firma | Descripción |
-|--------|-------|-------------|
-| `invoice()` | `invoice(buyer, items, *, doc_type="FACT", payment_terms=None, amount_str="", observaciones="-", tipo_personeria=None, tipo_frase=None, escenario=None)` | Emite FACT, FCAM, FESP, FPEQ, NABN, RDON o RECI según `doc_type`. |
-| `cca_invoice()` | `cca_invoice(buyer, items, cobros, *, tipo_frase=None, escenario=None)` | FACT con complemento CCA. |
-| `fuel_invoice()` | `fuel_invoice(buyer, items, *, tipo_frase=None, escenario=None, frases=None, auto_fuel_subsidy_frases=None)` | FACT con complemento combustible (IVA + PETROLEO). Auto-inyecta frases 9/18 y 9/19 durante el subsidio. |
-| `credit_note()` | `credit_note(buyer, items, origin, reason, *, tipo_frase=None, escenario=None)` | Nota de crédito (NCRE). |
-| `debit_note()` | `debit_note(buyer, items, origin, reason, *, tipo_frase=None, escenario=None)` | Nota de débito (NDEB). |
-| `credit_note_total()` | `credit_note_total(auth_number, issue_datetime, reason="...", reference="")` | Nota de crédito total. Devuelve `dict`. |
-| `cancel()` | `cancel(auth_number, receiver_id, issue_datetime, reason="Anulación")` | Anula un DTE. Devuelve `dict`. |
-| `lookup_nit()` | `lookup_nit(nit)` | Consulta SAT. Devuelve `{"nit","name","address","city","district","state"}`. |
-| `get_dte()` | `get_dte(auth_number, fmt="JSON")` | Recupera el DTE (`"JSON"`, `"XML"`, `"HTML"`, `"PDF"`). |
-| `get_dte_info()` | `get_dte_info(auth_number)` | Metadatos del DTE. |
-
-### Parámetros comunes
-
-- **`buyer`**: `"CF"` (consumidor final), un NIT string (`"12345678"` — se consulta el nombre), un dict CUI (`{"type":"CUI","taxid":...,"name":...}`) o un dict NIT explícito (`{"taxid","name","address","city","district","state","country","email"}`).
-- **`items`**: lista de dicts con `description` (str, req), `price` (float/Decimal, req), `qty` (1), `type` (`"Servicio"`/`"Bien"`), `unit_of_measure` (`"UNI"`), `discount` (opcional).
-- **`origin`** (NCRE/NDEB): `{"auth_number": ..., "date": "YYYY-MM-DD", "series": ..., "number": ...}`.
-
-## Establecimiento (sucursal)
-
-Cada NIT puede tener varios establecimientos registrados en el RTU. Configúralos al crear el cliente:
+## Establecimiento / sucursal (solo GT)
 
 ```python
 client = DigifactClient(
@@ -363,7 +503,30 @@ client = DigifactClient(
 )
 ```
 
-Aplican a todos los DTE emitidos por ese cliente. Si se omiten, se usan los defaults `"1"` / `"ESTABLECIMIENTO PRINCIPAL"`.
+---
+
+## Manejo de errores
+
+```python
+from digifact_sdk import (
+    DigifactError,           # base
+    DigifactAuthError,       # fallo de autenticación
+    DigifactApiError,        # error HTTP / de API
+    DigifactValidationError, # rechazo de SAT/DGII
+    DigifactNitNotFoundError, # NIT/RNC no encontrado
+)
+
+try:
+    result = client.invoice("CF", [...])
+except DigifactValidationError as exc:
+    print(f"Rechazado: {exc}")
+    print(f"Código: {exc.code}")
+    print(f"Respuesta: {exc.raw}")
+except DigifactError as exc:
+    print(f"Error del SDK: {exc}")
+```
+
+---
 
 ## Ejecutar las pruebas
 
@@ -371,40 +534,51 @@ Aplican a todos los DTE emitidos por ese cliente. Si se omiten, se usan los defa
 # Pruebas unitarias (no requieren credenciales)
 python -m pytest tests/ -v
 
-# Pruebas de integración
-export DIGIFACT_TAXID=12345678
-export DIGIFACT_USERNAME=FELUSER
+# Pruebas de integración (requieren credenciales reales)
+export DIGIFACT_TAXID=132752155
+export DIGIFACT_USERNAME=TESTUSERUNO
 export DIGIFACT_PASSWORD=tu_contraseña
+export DIGIFACT_COUNTRY=DO
 python -m pytest tests/ -v
 ```
+
+---
 
 ## Variables de entorno
 
 | Variable | Descripción |
 |----------|-------------|
-| `DIGIFACT_TAXID` | NIT del emisor (p. ej. `12345678`) |
-| `DIGIFACT_USERNAME` | Usuario (p. ej. `FELUSER`) |
-| `DIGIFACT_PASSWORD` | Contraseña de la cuenta |
-| `DIGIFACT_ENVIRONMENT` | `test` (default) o `production` |
-| `DIGIFACT_DISABLE_AUTO_FUEL_SUBSIDY_FRASES` | `1` para deshabilitar la auto-inyección de frases 9/18 y 9/19 sin tocar código |
+| `DIGIFACT_TAXID` | NIT (GT) o RNC (DO) del emisor |
+| `DIGIFACT_USERNAME` | Usuario Digifact |
+| `DIGIFACT_PASSWORD` | Contraseña |
+| `DIGIFACT_COUNTRY` | `"GT"` (default) o `"DO"` |
+| `DIGIFACT_ENVIRONMENT` | `"test"` (default) o `"production"` |
+| `DIGIFACT_DISABLE_AUTO_FUEL_SUBSIDY_FRASES` | `"1"` para deshabilitar frases de subsidio (GT) |
 
-## Manejo de errores
+---
 
-```python
-from digifact_sdk import (
-    DigifactError,          # base
-    DigifactAuthError,      # fallo de autenticación
-    DigifactApiError,       # error HTTP / de API
-    DigifactValidationError, # rechazo de SAT
-    DigifactNitNotFoundError, # NIT no encontrado
-)
+## Referencia de métodos
 
-try:
-    result = client.invoice("CF", [...])
-except DigifactValidationError as exc:
-    print(f"SAT rechazó: {exc}")
-    print(f"Código: {exc.code}")
-    print(f"Respuesta: {exc.raw}")
-except DigifactError as exc:
-    print(f"Error del SDK: {exc}")
-```
+Todos los métodos de emisión devuelven `DteResult` con los campos:
+`auth_number`, `series`, `number`, `issue_datetime`, `raw`.
+
+### Multi-país
+
+| Método | GT | DO | Descripción |
+|--------|:--:|:--:|-------------|
+| `invoice(buyer, items, **kwargs)` | ✔ | ✔ | Emitir factura / e-CF |
+| `credit_note(buyer, items, origin, reason, **kwargs)` | ✔ | ✔ | Nota de crédito |
+| `debit_note(buyer, items, origin, reason, **kwargs)` | ✔ | ✔ | Nota de débito |
+| `get_document(auth_number, fmt="XML")` | ✔ | ✔ | Descargar documento (XML/HTML/PDF) |
+| `cancel(...)` | ✔ | ❌ | Anular DTE (no disponible en DO) |
+
+### Solo Guatemala
+
+| Método | Descripción |
+|--------|-------------|
+| `cca_invoice()` | FACT con complemento CCA |
+| `fuel_invoice()` | FACT con combustible (IVA + PETROLEO) |
+| `credit_note_total()` | Nota de crédito total vía `/cert/ncredtotal` |
+| `lookup_nit()` | Consultar NIT en SAT |
+| `get_dte_info()` | Metadatos del DTE |
+| `get_dte()` | Recuperar DTE (alias) |
