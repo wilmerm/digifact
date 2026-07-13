@@ -52,7 +52,7 @@ def _build_header_do(
     doc_type: str,
     issue_dt: str,
     secuencia: str,
-    fecha_vencimiento_secuencia: str,
+    fecha_vencimiento_secuencia: str = "",
     indicador_monto_gravado: str = "0",
     tipo_ingresos: str = "01",
     tipo_pago: str = "1",
@@ -63,19 +63,25 @@ def _build_header_do(
 ) -> dict:
     """Build the ``Header`` block for an e-CF.
 
+    ``FechaVencimientoSecuencia`` is only included when provided (optional for
+    doc types like 32 that do not support it).
+
     Note: ``Currency`` and ``AdditionalIssueType`` are OMITTED when not needed,
     matching the working JSON payload (the API may reject extra fields).
     """
+    info_list: list[dict[str, str]] = [
+        {"Name": "Secuencia", "Value": secuencia},
+        {"Name": "IndicadorMontoGravado", "Value": indicador_monto_gravado},
+        {"Name": "TipoIngresos", "Value": tipo_ingresos},
+        {"Name": "TipoPago", "Value": tipo_pago},
+    ]
+    if fecha_vencimiento_secuencia:
+        info_list.insert(1, {"Name": "FechaVencimientoSecuencia", "Value": fecha_vencimiento_secuencia})
+
     header: dict[str, Any] = {
         "DocType": doc_type,
         "IssuedDateTime": issue_dt,
-        "AdditionalIssueDocInfo": [
-            {"Name": "Secuencia", "Value": secuencia},
-            {"Name": "FechaVencimientoSecuencia", "Value": fecha_vencimiento_secuencia},
-            {"Name": "IndicadorMontoGravado", "Value": indicador_monto_gravado},
-            {"Name": "TipoIngresos", "Value": tipo_ingresos},
-            {"Name": "TipoPago", "Value": tipo_pago},
-        ],
+        "AdditionalIssueDocInfo": info_list,
     }
     if exchange_rate is not None:
         header["ExchangeRate"] = exchange_rate
@@ -113,6 +119,12 @@ def _build_seller_do(
     - ``BranchInfo.Code`` is optional
     - ``Contact`` block is optional
     """
+    if not name:
+        raise ValueError(
+            "seller_name (Razón Social del Emisor) es obligatorio para e-CF DO. "
+            "Pásalo como kwarg en client.invoice() o configúralo en DigifactClient(seller_name=...)."
+        )
+
     additionl_info = list(seller_additionl_info or [])
     if numero_factura_interna and not any(
         entry.get("Name") == "NumeroFacturaInterna" for entry in additionl_info
@@ -121,21 +133,28 @@ def _build_seller_do(
             {"Name": "NumeroFacturaInterna", "Value": numero_factura_interna}
         )
 
+    # Build seller dict with key order matching the working JSON:
+    # TaxID → Name → Contact → AdditionlInfo → BranchInfo
     seller: dict[str, Any] = {
         "TaxID": taxid,
         "Name": name,
-        "BranchInfo": {
-            "Name": branch_name,
-            "AddressInfo": {
-                "Address": address,
-                "District": district,
-                "State": state,
-                "Country": country,
-            },
+        "Contact": {
+            "PhoneList": {"Phone": [""]},
+            "EmailList": {"Email": [""]},
+            "Website": "",
         },
     }
     if additionl_info:
         seller["AdditionlInfo"] = additionl_info
+    seller["BranchInfo"] = {
+        "Name": branch_name,
+        "AddressInfo": {
+            "Address": address,
+            "District": district,
+            "State": state,
+            "Country": country,
+        },
+    }
     return seller
 
 
@@ -282,7 +301,7 @@ def build_ecf(
     *,
     doc_type: str = "31",
     secuencia: str,
-    fecha_vencimiento_secuencia: str,
+    fecha_vencimiento_secuencia: str = "",
     indicador_monto_gravado: str = "0",
     tipo_ingresos: str = "01",
     tipo_pago: str = "1",

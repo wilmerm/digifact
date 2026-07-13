@@ -186,25 +186,29 @@ class DoInvoiceTotals:
         for g in groups.values():
             result.append({
                 "Code": g["Code"],
-                "TaxableAmount": str(g["TaxableAmount"]),
+                "TaxableAmount": fmt(g["TaxableAmount"], decimals=2),
                 "Rate": str(g["Rate"]),
-                "Amount": str(g["Amount"]),
+                "Amount": fmt(g["Amount"], decimals=2),
             })
         return result
 
     def to_totals_block(self) -> dict:
         """Build the full ``Totals`` JSON block.
 
-        All monetary values are returned as strings with 2 decimal places,
-        matching the format confirmed working with the Digifact DO API.
+        Format per API requirements:
+        - ``TotalTaxableAmount`` → **number** (float)
+        - ``GrandTotal.InvoiceTotal`` → **string** (2 decimales)
+        - ``TotalTax[].*`` values → **string**
+
+        Key order matches the working JSON: TotalTaxableAmount → TotalTaxes → GrandTotal → AdditionalInfo.
         """
         taxes = self.build_taxes()
         block: dict[str, Any] = {
-            "TotalTaxableAmount": fmt(self.total_taxable, decimals=2),
-            "GrandTotal": {
-                "InvoiceTotal": fmt(self.grand_total, decimals=2),
-            },
+            "TotalTaxableAmount": float(self.total_taxable),
         }
         if taxes:
             block["TotalTaxes"] = {"TotalTax": taxes}
+        block["GrandTotal"] = {
+            "InvoiceTotal": fmt(self.grand_total, decimals=2),
+        }
         return block

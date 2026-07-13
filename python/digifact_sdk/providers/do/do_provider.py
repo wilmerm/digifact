@@ -136,9 +136,9 @@ class DoProvider(BaseProvider):
         fecha_vencimiento_secuencia : str
             Fecha de vencimiento del NCF (ej. ``"2028-12-31"``).
         """
-        if not secuencia or not fecha_vencimiento_secuencia:
+        if not secuencia:
             raise DigifactValidationError(
-                "secuencia and fecha_vencimiento_secuencia are required for DO invoices"
+                "secuencia is required for DO invoices"
             )
 
         seller_name = kwargs.pop("seller_name", self.config.seller_name or "")

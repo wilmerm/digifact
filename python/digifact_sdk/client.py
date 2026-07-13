@@ -123,7 +123,31 @@ class DigifactClient:
             f"environment={self._provider.config.environment!r})"
         )
 
+    # ── DO-specific kwargs that must NOT be passed to GT provider ───────────────
+    _DO_INVOICE_KWARGS = frozenset({
+        "secuencia", "fecha_vencimiento_secuencia", "indicador_monto_gravado",
+        "tipo_ingresos", "tipo_pago", "fecha_desde", "fecha_hasta",
+        "numero_factura_interna", "seller_additionl_info", "seller_branch_name",
+        "seller_branch_district", "seller_branch_state", "seller_branch_country",
+        "url_to_send", "payments", "issue_dt", "totals_extra_info",
+    })
+
     # ── Public API — delegates to the active provider ─────────────────────────
+
+    def _check_kwargs(self, method_name: str, kwargs: dict[str, Any]) -> None:
+        """Validate kwargs for the current country. Raises ``ValueError`` with
+        a helpful message if DO-specific kwargs are passed when country=GT
+        (or vice versa).
+        """
+        if self.country == "GT":
+            do_kwargs = self._DO_INVOICE_KWARGS & kwargs.keys()
+            if do_kwargs:
+                raise ValueError(
+                    f"{method_name}() received DO-specific kwargs {sorted(do_kwargs)} "
+                    f"but client is configured for country='GT'. "
+                    f"Did you forget to pass country='DO' when creating the "
+                    f"DigifactClient?"
+                )
 
     def invoice(
         self,
@@ -138,6 +162,7 @@ class DigifactClient:
         For GT the default ``doc_type`` is ``"FACT"``.
         For DO the default ``doc_type`` is ``"31"`` (Factura Crédito Fiscal).
         """
+        self._check_kwargs("invoice", kwargs)
         # Dynamic default: GT → "FACT", DO → "31"
         if doc_type == "FACT" and self.country == "DO":
             doc_type = "31"
@@ -152,6 +177,7 @@ class DigifactClient:
         **kwargs: Any,
     ) -> DteResult:
         """Emit a credit note (GT: NCRE, DO: tipo 34)."""
+        self._check_kwargs("credit_note", kwargs)
         return self._provider.credit_note(buyer, items, origin, reason, **kwargs)
 
     def debit_note(
@@ -163,6 +189,7 @@ class DigifactClient:
         **kwargs: Any,
     ) -> DteResult:
         """Emit a debit note (GT: NDEB, DO: tipo 33)."""
+        self._check_kwargs("debit_note", kwargs)
         return self._provider.debit_note(buyer, items, origin, reason, **kwargs)
 
     def get_document(self, auth_number: str, fmt: str = "JSON") -> dict:

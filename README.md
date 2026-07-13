@@ -117,9 +117,9 @@ Console.WriteLine(result.AuthNumber);
 from digifact_sdk import DigifactClient
 
 client = DigifactClient(
-    taxid="132752155",         # RNC del emisor (9 dígitos, sin guiones)
+    taxid="123456789",         # RNC del emisor (9 dígitos, sin guiones)
     username="TESTUSERUNO",
-    password="Digifact25*",
+    password="*****",
     country="DO",               # ← obligatorio para DO
     environment="test",         # "test" o "production"
 )
