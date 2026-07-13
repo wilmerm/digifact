@@ -158,7 +158,9 @@ result = client.invoice(
     items=[{"description": "Producto", "price": 500.00, "indicador_facturacion": "1"}],
     doc_type="32",
     secuencia="0000490964",
-    fecha_vencimiento_secuencia="2028-12-31",
+    # No usar fecha_vencimiento_secuencia con tipo 32 — la API lo rechaza
+    seller_name="EMPRESA DE PRUEBA S.A.",
+    seller_address="Dirección de Prueba",
 )
 
 # Nota de Crédito (e-CF tipo 34)
@@ -182,7 +184,13 @@ doc = client.get_document(result.auth_number, fmt="XML")
 
 > ⚠️ **Importante:**
 > - `taxid` es el **RNC** (9 dígitos, sin guiones).
-> - Siempre se requiere `secuencia` (NCF) y `fecha_vencimiento_secuencia`.
+> - `seller_name` y `seller_address` son **obligatorios** para DO (no se
+>   auto-consultan). Se pasan como kwargs en `client.invoice()` o en el
+>   constructor de `DigifactClient`.
+> - `secuencia` (NCF) es **obligatorio** para todos los tipos de
+>   documento.
+> - `fecha_vencimiento_secuencia` es **obligatorio solo para tipo 31**
+>   (Crédito Fiscal). **No usar con tipo 32** — la API lo rechaza.
 > - Los precios son **netos** (sin ITBIS). El impuesto se calcula según
 >   `indicador_facturacion`.
 > - No existe `"CF"` (Consumidor Final). El comprador siempre necesita
@@ -204,8 +212,8 @@ doc = client.get_document(result.auth_number, fmt="XML")
 | `token` | `str` | `""` | Bearer token preobtenido. |
 | `country` | `str` | `"GT"` | `"GT"` o `"DO"`. |
 | `environment` | `str` | `"test"` | `"test"` o `"production"`. |
-| `seller_name` | `str` | `""` | Nombre/Razón Social del emisor. Se auto-consulta si se omite. |
-| `seller_address` | `str` | `""` | Dirección del emisor. Se auto-consulta si se omite (GT). |
+| `seller_name` | `str` | `""` | Nombre/Razón Social del emisor. GT: se auto-consulta si se omite. DO: **requerido**. |
+| `seller_address` | `str` | `""` | Dirección del emisor. GT: se auto-consulta. DO: **requerido**. |
 | `timeout` | `int` | `120` | Timeout HTTP en segundos. |
 
 ### Específicos de Guatemala (se ignoran si `country="DO"`)
@@ -269,7 +277,7 @@ Estos parámetros se pasan como `**kwargs` al llamar `client.invoice(...)`:
 | Parámetro | Default | Descripción |
 |-----------|---------|-------------|
 | `secuencia` | **requerido** | NCF asignado por la DGII (ej. `"0000490963"`). |
-| `fecha_vencimiento_secuencia` | **requerido** | Fecha vencimiento NCF (ej. `"2028-12-31"`). |
+| `fecha_vencimiento_secuencia` | opcional (tipo 31) | Fecha vencimiento NCF (ej. `"2028-12-31"`). **Omitir para tipo 32**. |
 | `indicador_monto_gravado` | `"0"` | `"0"` o `"1"`. |
 | `tipo_ingresos` | `"01"` | Código catálogo DGII. |
 | `tipo_pago` | `"1"` | `"1"` = Contado. |
