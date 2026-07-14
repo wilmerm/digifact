@@ -102,6 +102,14 @@ class DigifactClient:
                 timeout=timeout,
                 seller_name=kwargs.pop("seller_name", ""),
                 seller_address=kwargs.pop("seller_address", ""),
+                seller_branch_name=kwargs.pop("seller_branch_name", "0001"),
+                seller_branch_code=kwargs.pop("seller_branch_code", ""),
+                seller_branch_district=kwargs.pop("seller_branch_district", ""),
+                seller_branch_state=kwargs.pop("seller_branch_state", ""),
+                seller_branch_country=kwargs.pop("seller_branch_country", ""),
+                seller_phone=kwargs.pop("seller_phone", ""),
+                seller_email=kwargs.pop("seller_email", ""),
+                seller_website=kwargs.pop("seller_website", ""),
             )
             self._provider = DoProvider(config)
 
@@ -128,8 +136,13 @@ class DigifactClient:
         "secuencia", "fecha_vencimiento_secuencia", "indicador_monto_gravado",
         "tipo_ingresos", "tipo_pago", "fecha_desde", "fecha_hasta",
         "numero_factura_interna", "seller_additionl_info", "seller_branch_name",
-        "seller_branch_district", "seller_branch_state", "seller_branch_country",
+        "seller_branch_code", "seller_branch_district", "seller_branch_state",
+        "seller_branch_country", "seller_phone", "seller_email", "seller_website",
         "url_to_send", "payments", "issue_dt", "totals_extra_info",
+        "indicador_envio_diferido", "exchange_rate", "currency",
+        "extra_taxes", "fecha_limite_pago", "termino_pago",
+        "numero_cuenta_pago", "banco_pago",
+        "origin", "reason", "codigo_modificacion",
     })
 
     # ── Public API — delegates to the active provider ─────────────────────────

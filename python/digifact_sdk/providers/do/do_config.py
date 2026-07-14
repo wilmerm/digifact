@@ -26,6 +26,22 @@ class DoConfig:
         Razón Social del emisor. Si se omite se puede resolver vía lookup RNC.
     seller_address : str, optional
         Dirección del emisor.
+    seller_branch_name : str, optional
+        Nombre de sucursal (default ``"0001"``).
+    seller_branch_code : str, optional
+        Código de sucursal (opcional, requerido para tipo 47).
+    seller_branch_district : str, optional
+        Código de distrito/municipio.
+    seller_branch_state : str, optional
+        Código de provincia.
+    seller_branch_country : str, optional
+        Código de país (default ``"DO"``).
+    seller_phone : str, optional
+        Teléfono del emisor.
+    seller_email : str, optional
+        Email del emisor.
+    seller_website : str, optional
+        Sitio web del emisor.
     """
 
     taxid: str
@@ -36,6 +52,14 @@ class DoConfig:
     timeout: int = 120
     seller_name: str = ""
     seller_address: str = ""
+    seller_branch_name: str = "0001"
+    seller_branch_code: str = ""
+    seller_branch_district: str = ""
+    seller_branch_state: str = ""
+    seller_branch_country: str = ""
+    seller_phone: str = ""
+    seller_email: str = ""
+    seller_website: str = ""
 
     @property
     def base_url(self) -> str:

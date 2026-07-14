@@ -143,6 +143,7 @@ class DoProvider(BaseProvider):
 
         seller_name = kwargs.pop("seller_name", self.config.seller_name or "")
         seller_address = kwargs.pop("seller_address", self.config.seller_address or "")
+        self._merge_branch_defaults(kwargs)
 
         payload = build_ecf(
             self.config.taxid,
@@ -158,6 +159,22 @@ class DoProvider(BaseProvider):
         data = self._certify(payload)
         return self._parse_result(data)
 
+    def _merge_branch_defaults(self, kwargs: dict[str, Any]) -> None:
+        """Merge config-level branch/contact defaults into kwargs (kwargs take priority)."""
+        defaults = {
+            "seller_branch_name": self.config.seller_branch_name,
+            "seller_branch_code": self.config.seller_branch_code,
+            "seller_branch_district": self.config.seller_branch_district,
+            "seller_branch_state": self.config.seller_branch_state,
+            "seller_branch_country": self.config.seller_branch_country,
+            "seller_phone": self.config.seller_phone,
+            "seller_email": self.config.seller_email,
+            "seller_website": self.config.seller_website,
+        }
+        for key, default_val in defaults.items():
+            if key not in kwargs:
+                kwargs[key] = default_val
+
     def credit_note(
         self,
         buyer: str | dict,
@@ -167,9 +184,17 @@ class DoProvider(BaseProvider):
         *,
         secuencia: str = "",
         fecha_vencimiento_secuencia: str = "",
+        codigo_modificacion: str = "",
         **kwargs: Any,
     ) -> DteResult:
-        """Emit an e-CF Nota de Crédito (tipo 34)."""
+        """Emit an e-CF Nota de Crédito (tipo 34).
+
+        Parameters
+        ----------
+        codigo_modificacion : str
+            DGII modification code: ``"1"`` (anulación), ``"2"`` (corrección),
+            ``"3"`` (devolución).
+        """
         if not secuencia or not fecha_vencimiento_secuencia:
             raise DigifactValidationError(
                 "secuencia and fecha_vencimiento_secuencia are required for DO credit notes"
@@ -177,6 +202,7 @@ class DoProvider(BaseProvider):
 
         seller_name = kwargs.pop("seller_name", self.config.seller_name or "")
         seller_address = kwargs.pop("seller_address", self.config.seller_address or "")
+        self._merge_branch_defaults(kwargs)
 
         payload = build_ecf_34(
             self.config.taxid,
@@ -188,6 +214,7 @@ class DoProvider(BaseProvider):
             reason=reason,
             secuencia=secuencia,
             fecha_vencimiento_secuencia=fecha_vencimiento_secuencia,
+            codigo_modificacion=codigo_modificacion,
             **kwargs,
         )
         data = self._certify(payload)
@@ -202,9 +229,17 @@ class DoProvider(BaseProvider):
         *,
         secuencia: str = "",
         fecha_vencimiento_secuencia: str = "",
+        codigo_modificacion: str = "",
         **kwargs: Any,
     ) -> DteResult:
-        """Emit an e-CF Nota de Débito (tipo 33)."""
+        """Emit an e-CF Nota de Débito (tipo 33).
+
+        Parameters
+        ----------
+        codigo_modificacion : str
+            DGII modification code: ``"1"`` (anulación), ``"2"`` (corrección),
+            ``"3"`` (devolución).
+        """
         if not secuencia or not fecha_vencimiento_secuencia:
             raise DigifactValidationError(
                 "secuencia and fecha_vencimiento_secuencia are required for DO debit notes"
@@ -212,6 +247,7 @@ class DoProvider(BaseProvider):
 
         seller_name = kwargs.pop("seller_name", self.config.seller_name or "")
         seller_address = kwargs.pop("seller_address", self.config.seller_address or "")
+        self._merge_branch_defaults(kwargs)
 
         payload = build_ecf_33(
             self.config.taxid,
@@ -223,6 +259,7 @@ class DoProvider(BaseProvider):
             reason=reason,
             secuencia=secuencia,
             fecha_vencimiento_secuencia=fecha_vencimiento_secuencia,
+            codigo_modificacion=codigo_modificacion,
             **kwargs,
         )
         data = self._certify(payload)

@@ -69,6 +69,8 @@ class DoLineCalc:
         ``"3"`` (ITBIS 0%), ``"4"`` (Exento).
     discount : Decimal, optional
         Line-level discount amount.
+    charge : Decimal, optional
+        Line-level charge (recargo) amount.
     """
 
     def __init__(
@@ -77,6 +79,7 @@ class DoLineCalc:
         unit_price: Decimal | float | str,
         indicador: str = "1",
         discount: Decimal | float | str | None = None,
+        charge: Decimal | float | str | None = None,
     ) -> None:
         if indicador not in _ITBIS_RATES:
             raise ValueError(f"Invalid indicador_facturacion: {indicador!r}. Must be 1, 2, 3, or 4.")
@@ -89,7 +92,10 @@ class DoLineCalc:
         self.discount = (Decimal(str(discount)) if discount is not None else Decimal("0")).quantize(
             Decimal("0.000001"), rounding=ROUND_HALF_UP
         )
-        self.line_total = (self.gross - self.discount).quantize(
+        self.charge = (Decimal(str(charge)) if charge is not None else Decimal("0")).quantize(
+            Decimal("0.000001"), rounding=ROUND_HALF_UP
+        )
+        self.line_total = (self.gross - self.discount + self.charge).quantize(
             Decimal("0.000001"), rounding=ROUND_HALF_UP
         )
 
@@ -200,6 +206,11 @@ class DoInvoiceTotals:
             result.append(entry)
         return result
 
+    @property
+    def is_all_exento(self) -> bool:
+        """True when every line item has indicador_facturacion=4 (Exento)."""
+        return all(line.indicador == "4" for line in self.lines)
+
     def to_totals_block(
         self,
         extra_taxes: list[dict] | None = None,
@@ -207,11 +218,12 @@ class DoInvoiceTotals:
         """Build the full ``Totals`` JSON block.
 
         Format per API requirements:
-        - ``TotalTaxableAmount`` → **number** (float)
+        - ``TotalTaxableAmount`` → **number** (float), **omitted** when all
+          items are EXENTO (matching types 43, 44, 45, 47).
         - ``GrandTotal.InvoiceTotal`` → **string** (2 decimales)
         - ``TotalTax[].*`` values → **string**
 
-        Key order matches the working JSON: TotalTaxableAmount → TotalTaxes → GrandTotal → AdditionalInfo.
+        Key order matches the working JSON: [TotalTaxableAmount] → TotalTaxes → GrandTotal → AdditionalInfo.
 
         Parameters
         ----------
@@ -224,9 +236,13 @@ class DoInvoiceTotals:
         taxes = self.build_taxes()
         if extra_taxes:
             taxes.extend(extra_taxes)
-        block: dict[str, Any] = {
-            "TotalTaxableAmount": float(self.total_taxable),
-        }
+
+        block: dict[str, Any] = {}
+
+        # Omit TotalTaxableAmount for fully EXENTO documents (types 43, 44, 45, 47)
+        if not self.is_all_exento:
+            block["TotalTaxableAmount"] = float(self.total_taxable)
+
         if taxes:
             block["TotalTaxes"] = {"TotalTax": taxes}
         block["GrandTotal"] = {
