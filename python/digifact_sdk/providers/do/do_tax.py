@@ -162,6 +162,9 @@ class DoInvoiceTotals:
     def build_taxes(self) -> list[dict]:
         """Build the ``TotalTaxes.TotalTax[]`` list grouped by tax code.
 
+        Key order is critical for DGII's XSLT-to-XML validation.  The confirmed
+        working order is: ``Code`` → ``TaxableAmount`` (number) → ``Rate`` (string) → ``Amount`` (string).
+
         For EXENTO items, the ``Amount`` field contains the line total
         (as confirmed by working DO API payloads).
         ``TaxableAmount`` and ``Rate`` are **omitted** for EXENTO when they
@@ -192,17 +195,18 @@ class DoInvoiceTotals:
                 )
         result = []
         for g in groups.values():
+            # Build entry with EXACT key order: Code → TaxableAmount → Rate → Amount
+            # TaxableAmount is a number (float), Rate and Amount are strings.
             entry: dict[str, Any] = {
                 "Code": g["Code"],
-                "Amount": fmt(g["Amount"], decimals=2),
             }
             if g["Code"] == "EXENTO" and g["TaxableAmount"] == Decimal("0") and g["Rate"] == Decimal("0"):
                 # Omit TaxableAmount and Rate for EXENTO when both are zero
-                # (matching the majority of working payload examples)
-                pass
+                entry["Amount"] = fmt(g["Amount"], decimals=2)
             else:
-                entry["TaxableAmount"] = fmt(g["TaxableAmount"], decimals=2)
+                entry["TaxableAmount"] = round(float(g["TaxableAmount"]), 2)
                 entry["Rate"] = str(g["Rate"])
+                entry["Amount"] = fmt(g["Amount"], decimals=2)
             result.append(entry)
         return result
 

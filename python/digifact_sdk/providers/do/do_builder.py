@@ -106,6 +106,8 @@ def _build_header_do(
     termino_pago: str | None = None,
     numero_cuenta_pago: str | None = None,
     banco_pago: str | None = None,
+    indicador_nota_credito: str | None = None,
+    use_asignacion_secuencia: bool = False,
 ) -> dict:
     """Build the ``Header`` block for an e-CF.
 
@@ -114,11 +116,24 @@ def _build_header_do(
 
     ``IndicadorEnvioDiferido`` is placed before ``IndicadorMontoGravado``
     matching the working JSON payload order.
+
+    ``IndicadorNotaCredito`` is included for Nota de Crédito (tipo 34).
+
+    NOTE: Some doc types (32 with ``IndicadorEnvioDiferido=1``) may require
+    ``"Name": "AsignacionDeSecuencia"`` instead of ``"Secuencia"``.  This is
+    controlled via the ``use_asignacion_secuencia`` parameter (default ``False``).
+    Set it to ``True`` only after confirming against the sandbox, as the payloads
+    show both patterns.
     """
-    # Step 1 — Secuencia always first
-    info_list: list[dict[str, str]] = [
-        {"Name": "Secuencia", "Value": secuencia},
-    ]
+    # Step 1 — Secuencia (or AsignacionDeSecuencia) always first
+    if use_asignacion_secuencia:
+        info_list: list[dict[str, str]] = [
+            {"Name": "AsignacionDeSecuencia", "Value": secuencia},
+        ]
+    else:
+        info_list = [
+            {"Name": "Secuencia", "Value": secuencia},
+        ]
 
     # Step 2 — FechaVencimientoSecuencia (if provided)
     if fecha_vencimiento_secuencia:
@@ -132,14 +147,23 @@ def _build_header_do(
             {"Name": "IndicadorEnvioDiferido", "Value": indicador_envio_diferido}
         )
 
-    # Step 4 — IndicadorMontoGravado, TipoIngresos, TipoPago
+    # Step 4 — IndicadorMontoGravado
     info_list.append(
         {"Name": "IndicadorMontoGravado", "Value": indicador_monto_gravado}
     )
+
+    # Step 5 — IndicadorNotaCredito (for tipo 34, after IndicadorMontoGravado
+    #          matching NUC.J-34.json order)
+    if indicador_nota_credito is not None:
+        info_list.append(
+            {"Name": "IndicadorNotaCredito", "Value": indicador_nota_credito}
+        )
+
+    # Step 6 — TipoIngresos, TipoPago
     info_list.append({"Name": "TipoIngresos", "Value": tipo_ingresos})
     info_list.append({"Name": "TipoPago", "Value": tipo_pago})
 
-    # Step 5 — Optional fields in working JSON order
+    # Step 7 — Optional fields in working JSON order
     if fecha_desde:
         info_list.append({"Name": "FechaDesde", "Value": fecha_desde})
     if fecha_hasta:
@@ -309,20 +333,15 @@ def _build_items_do(
         lc = DoLineCalc(qty, price, indicador=indicador, discount=discount, charge=charge)
         lines.append(lc)
 
-        # Qty and Price — use number when input is numeric (int/float), string
-        # otherwise.  Matching the mixed format in working JSON payloads where
-        # some use native numbers and others use strings.
-        raw_qty = item.get("qty", 1)
-        raw_price = item["price"]
-        use_num_qty = isinstance(raw_qty, (int, float)) and not isinstance(raw_qty, bool)
-        use_num_price = isinstance(raw_price, (int, float)) and not isinstance(raw_price, bool)
-
+        # Qty and Price — always formatted as strings with 2 decimal places
+        # for consistency and to avoid DGII validation issues.  Uses fmt() to
+        # produce a deterministic string representation.
         built: dict[str, Any] = {
             "Type": item_type,
             "Description": desc,
-            "Qty": raw_qty if use_num_qty else str(qty),
+            "Qty": fmt(qty, decimals=2),
             "UnitOfMeasure": uom,
-            "Price": raw_price if use_num_price else str(price),
+            "Price": fmt(price, decimals=2),
             "Totals": {"TotalItem": fmt(lc.line_total, decimals=2)},
             "AdditionalInfo": [
                 {"Name": "IndicadorFacturacion", "Value": indicador},
@@ -404,16 +423,19 @@ def _build_items_do(
 
 def _build_totals_additional_info(
     additional_info: list[dict] | None = None,
-) -> list[dict]:
+) -> list[dict] | None:
     """Build ``Totals.AdditionalInfo`` block.
 
-    Returns the caller-provided list as-is, or an empty list by default.
+    Returns the caller-provided list as-is, or ``None`` when no data provided.
+    The caller must omit the key entirely when this returns ``None``, because
+    the Digifact DO API rejects ``"AdditionalInfo": []`` (minimum 1 entry).
+
     Working payloads use semantic fields such as ``TotalITBISRetenido``,
     ``MontoNoFacturable``, or ``TotalISRRetencion``.
     """
     if additional_info:
         return additional_info
-    return []
+    return None
 
 
 def _build_additional_document_info(
@@ -555,6 +577,11 @@ def build_ecf(
     effective_issue_dt = issue_dt or do_now(with_offset=True)
     buyer_dict = _resolve_buyer_do(buyer)
 
+    # Auto-add IndicadorNotaCredito for tipo 34 (Nota de Crédito)
+    nc_indicador: str | None = None
+    if doc_type == "34":
+        nc_indicador = "0"
+
     header = _build_header_do(
         doc_type=doc_type,
         issue_dt=effective_issue_dt,
@@ -572,6 +599,7 @@ def build_ecf(
         termino_pago=termino_pago,
         numero_cuenta_pago=numero_cuenta_pago,
         banco_pago=banco_pago,
+        indicador_nota_credito=nc_indicador,
     )
 
     seller = _build_seller_do(
@@ -595,7 +623,9 @@ def build_ecf(
     totals_block = totals.to_totals_block(extra_taxes=extra_taxes)
     # QtyItems — item counter (present in 12/14 working payloads)
     totals_block["QtyItems"] = len(line_items)
-    totals_block["AdditionalInfo"] = _build_totals_additional_info(totals_extra_info)
+    totals_extra = _build_totals_additional_info(totals_extra_info)
+    if totals_extra is not None:
+        totals_block["AdditionalInfo"] = totals_extra
 
     payload: dict[str, Any] = {
         "Version": "1.0",
