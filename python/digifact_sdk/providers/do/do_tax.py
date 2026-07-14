@@ -158,6 +158,8 @@ class DoInvoiceTotals:
 
         For EXENTO items, the ``Amount`` field contains the line total
         (as confirmed by working DO API payloads).
+        ``TaxableAmount`` and ``Rate`` are **omitted** for EXENTO when they
+        are zero, matching the majority of working payload examples.
         """
         groups: dict[str, dict] = {}
         for line in self.lines:
@@ -184,15 +186,24 @@ class DoInvoiceTotals:
                 )
         result = []
         for g in groups.values():
-            result.append({
+            entry: dict[str, Any] = {
                 "Code": g["Code"],
-                "TaxableAmount": fmt(g["TaxableAmount"], decimals=2),
-                "Rate": str(g["Rate"]),
                 "Amount": fmt(g["Amount"], decimals=2),
-            })
+            }
+            if g["Code"] == "EXENTO" and g["TaxableAmount"] == Decimal("0") and g["Rate"] == Decimal("0"):
+                # Omit TaxableAmount and Rate for EXENTO when both are zero
+                # (matching the majority of working payload examples)
+                pass
+            else:
+                entry["TaxableAmount"] = fmt(g["TaxableAmount"], decimals=2)
+                entry["Rate"] = str(g["Rate"])
+            result.append(entry)
         return result
 
-    def to_totals_block(self) -> dict:
+    def to_totals_block(
+        self,
+        extra_taxes: list[dict] | None = None,
+    ) -> dict:
         """Build the full ``Totals`` JSON block.
 
         Format per API requirements:
@@ -201,8 +212,18 @@ class DoInvoiceTotals:
         - ``TotalTax[].*`` values → **string**
 
         Key order matches the working JSON: TotalTaxableAmount → TotalTaxes → GrandTotal → AdditionalInfo.
+
+        Parameters
+        ----------
+        extra_taxes : list[dict], optional
+            Additional tax entries to append to ``TotalTax[]``, e.g.
+            ``[{"Code": "002", "TaxableAmount": "84.75", "Rate": "2.00", "Amount": "1.69"}]``.
+            These represent DGII-specific taxes (Impuesto Adicional 001,
+            CDT 002, ISC 004) that are not derived from indicador_facturacion.
         """
         taxes = self.build_taxes()
+        if extra_taxes:
+            taxes.extend(extra_taxes)
         block: dict[str, Any] = {
             "TotalTaxableAmount": float(self.total_taxable),
         }

@@ -21,6 +21,9 @@ def _resolve_buyer_do(buyer: str | dict) -> dict:
     a TaxID (RNC or Cédula).
 
     Working JSON structure uses flat EmailList/Website (not nested inside Contact).
+
+    ``TaxIDType`` is only included when the buyer dict explicitly provides
+    ``taxid_type`` — most working payloads omit it.
     """
     if isinstance(buyer, str):
         return {
@@ -33,9 +36,8 @@ def _resolve_buyer_do(buyer: str | dict) -> dict:
                 "Country": "DO",
             },
         }
-    return {
+    buyer_dict: dict[str, Any] = {
         "TaxID": buyer["taxid"],
-        "TaxIDType": None,
         "Name": buyer["name"],
         "EmailList": {"Email": [buyer.get("email", "")]},
         "Website": buyer.get("website", ""),
@@ -46,6 +48,10 @@ def _resolve_buyer_do(buyer: str | dict) -> dict:
             "Country": buyer.get("country", "DO"),
         },
     }
+    # TaxIDType — only if explicitly provided (present in only 2/14 payloads)
+    if "taxid_type" in buyer:
+        buyer_dict["TaxIDType"] = buyer["taxid_type"]
+    return buyer_dict
 
 
 def _build_header_do(
@@ -158,7 +164,10 @@ def _build_seller_do(
     return seller
 
 
-def _build_items_do(items: list[dict]) -> tuple[list[dict], DoInvoiceTotals]:
+def _build_items_do(
+    items: list[dict],
+    extra_taxes: list[dict] | None = None,
+) -> tuple[list[dict], DoInvoiceTotals]:
     """Build the ``Items`` list and totals from item dicts.
 
     Uses string values for Qty, Price, TotalItem (matching working JSON format).
@@ -175,6 +184,14 @@ def _build_items_do(items: list[dict]) -> tuple[list[dict], DoInvoiceTotals]:
         ean: str                (optional)
         plu: str                (optional)
         descripcion_item: str   (optional extended description)
+        taxes: list[dict]       (optional inline taxes, e.g. 001/002/004)
+        additional_info: list[dict] (optional extra AdditionalInfo entries)
+
+    Parameters
+    ----------
+    extra_taxes : list[dict], optional
+        Additional tax entries at invoice level (e.g. 002 CDT, 004 ISC).
+        Passed through to ``DoInvoiceTotals.to_totals_block()``.
     """
     line_items = []
     lines: list[DoLineCalc] = []
@@ -225,6 +242,17 @@ def _build_items_do(items: list[dict]) -> tuple[list[dict], DoInvoiceTotals]:
                 {"Name": "DescripcionItem", "Value": desc_item}
             )
 
+        # Optional inline taxes (e.g. 001 Impuesto Adicional, 002 CDT, 004 ISC)
+        item_taxes = item.get("taxes")
+        if item_taxes:
+            built["Taxes"] = {"Tax": item_taxes}
+
+        # Optional extra AdditionalInfo from item (FechaElaboracion, FechaVencimientoItem,
+        # ItemDescription, IndicadorAgenteRetencionPercepcion, etc.)
+        item_extra_info = item.get("additional_info")
+        if item_extra_info:
+            built["AdditionalInfo"].extend(item_extra_info)
+
         # Discounts (only if > 0, otherwise null)
         if discount is not None and discount > 0:
             built["Discounts"] = {
@@ -249,11 +277,13 @@ def _build_totals_additional_info(
 ) -> list[dict]:
     """Build ``Totals.AdditionalInfo`` block.
 
-    Working JSON shows: ``[{"Name": "", "Value": ""}]`` when present.
+    Returns the caller-provided list as-is, or an empty list by default.
+    Working payloads use semantic fields such as ``TotalITBISRetenido``,
+    ``MontoNoFacturable``, or ``TotalISRRetencion``.
     """
     if additional_info:
         return additional_info
-    return [{"Name": "", "Value": ""}]
+    return []
 
 
 def _build_additional_document_info(
@@ -320,6 +350,7 @@ def build_ecf(
     totals_extra_info: list[dict] | None = None,
     url_to_send: str | None = None,
     issue_dt: str | None = None,
+    extra_taxes: list[dict] | None = None,
     # Origin document for ND (33) / NC (34)
     origin: dict | None = None,
     reason: str = "",
@@ -336,10 +367,13 @@ def build_ecf(
         Dirección del emisor.
     buyer : str | dict
         RNC/Cédula string or buyer dict with ``taxid``, ``name``, etc.
+        Use ``taxid_type`` key for explicit ``Buyer.TaxIDType`` (optional).
     items : list[dict]
         List of item dicts. Each must have ``description`` and ``price``.
         ``indicador_facturacion`` controls ITBIS: ``"1"`` (18%), ``"2"`` (16%),
         ``"3"`` (0%), ``"4"`` (Exento).
+        Optional keys: ``taxes`` (inline item taxes), ``additional_info``
+        (extra AdditionalInfo entries per item).
     doc_type : str
         ``"31"`` (Factura Crédito Fiscal, default), ``"32"`` (Consumo),
         ``"33"`` (Nota Débito), ``"34"`` (Nota Crédito).
@@ -350,8 +384,15 @@ def build_ecf(
     payments : list[dict], optional
         Payment entries. If omitted, **no** ``Payments`` field is added.
         Working JSON proved it works without Payments.
+    totals_extra_info : list[dict], optional
+        Extra entries for ``Totals.AdditionalInfo``. Use semantic names like
+        ``TotalITBISRetenido``, ``MontoNoFacturable``, ``TotalISRRetencion``.
+    extra_taxes : list[dict], optional
+        Additional tax entries at invoice level appended to ``TotalTax[]``,
+        e.g. ``[{"Code": "002", "TaxableAmount": "84.75", "Rate": "2.00",
+        "Amount": "1.69"}]``.
     """
-    effective_issue_dt = issue_dt or do_now(with_offset=False)
+    effective_issue_dt = issue_dt or do_now(with_offset=True)
     buyer_dict = _resolve_buyer_do(buyer)
 
     header = _build_header_do(
@@ -380,9 +421,11 @@ def build_ecf(
         country=seller_branch_country,
     )
 
-    line_items, totals = _build_items_do(items)
+    line_items, totals = _build_items_do(items, extra_taxes=extra_taxes)
 
-    totals_block = totals.to_totals_block()
+    totals_block = totals.to_totals_block(extra_taxes=extra_taxes)
+    # A: QtyItems — item counter (present in 12/14 working payloads)
+    totals_block["QtyItems"] = len(line_items)
     totals_block["AdditionalInfo"] = _build_totals_additional_info(totals_extra_info)
 
     payload: dict[str, Any] = {
