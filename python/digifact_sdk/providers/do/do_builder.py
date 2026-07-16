@@ -323,7 +323,7 @@ def _build_items_do(
         price = Decimal(str(item["price"]))
         indicador = str(item.get("indicador_facturacion", "1"))
         item_type = str(item.get("type", "1"))
-        uom = resolve_uom(item.get("unit_of_measure", "UNI"))
+        uom = resolve_uom(item.get("unit_of_measure", ""))
         desc = item["description"]
         discount_val = item.get("discount")
         discount = Decimal(str(discount_val)) if discount_val is not None else None
@@ -340,13 +340,17 @@ def _build_items_do(
             "Type": item_type,
             "Description": desc,
             "Qty": fmt(qty, decimals=2),
-            "UnitOfMeasure": uom,
             "Price": fmt(price, decimals=2),
             "Totals": {"TotalItem": fmt(lc.line_total, decimals=2)},
             "AdditionalInfo": [
                 {"Name": "IndicadorFacturacion", "Value": indicador},
             ],
         }
+
+        # UnitOfMeasure — only emit when explicitly provided by the caller;
+        # the DGII schema rejects numeric codes like "98" for some doc types.
+        if uom:
+            built["UnitOfMeasure"] = uom
 
         # Optional codes — unified handling for EAN, PLU, and custom codes
         ean = item.get("ean")

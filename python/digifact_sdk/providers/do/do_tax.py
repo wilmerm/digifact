@@ -51,8 +51,17 @@ UOM_CODES: dict[str, str] = {
 
 
 def resolve_uom(uom: str) -> str:
-    """Map a common UOM name to a DGII standard code; fallback to '98' (Unidad/Servicio)."""
-    return UOM_CODES.get(uom, uom if uom else "98")
+    """Map a common UOM name to a DGII standard code.
+
+    Returns an empty string when *uom* is empty, so the caller can omit
+    the ``UnitOfMeasure`` field entirely from the payload (the DGII schema
+    may reject code-based values like ``"98"`` for certain document types).
+    When a non-empty value is given that is not found in the mapping, it
+    is passed through as-is.
+    """
+    if not uom:
+        return ""
+    return UOM_CODES.get(uom, uom)
 
 
 class DoLineCalc:
