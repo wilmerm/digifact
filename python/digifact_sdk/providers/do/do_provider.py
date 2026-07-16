@@ -1,6 +1,7 @@
 """República Dominicana e-CF provider — implements BaseProvider for DGII."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
@@ -14,6 +15,9 @@ from ...core.exceptions import (
 )
 from .do_config import DoConfig
 from .do_builder import build_ecf, build_ecf_31, build_ecf_32, build_ecf_33, build_ecf_34
+
+
+logger = logging.getLogger(__name__)
 
 
 class DoProvider(BaseProvider):
@@ -33,10 +37,16 @@ class DoProvider(BaseProvider):
     def authenticate(self) -> str:
         """Authenticate against Digifact DO and return a JWT token."""
         if self._token:
+            logger.debug("Using cached token for DO authentication")
             return self._token
         if not self.config.password:
             raise DigifactAuthError("password is required for DO authentication")
 
+        logger.debug(
+            "Authenticating against DO API at %s/login/get_token (username=%s)",
+            self.config.base_url,
+            self.config.full_username,
+        )
         resp = self._session.post(
             f"{self.config.base_url}/login/get_token",
             json={
@@ -51,12 +61,15 @@ class DoProvider(BaseProvider):
             raise DigifactAuthError(f"DO Login HTTP error: {exc}", raw=_try_json(resp)) from exc
 
         data = resp.json()
+        logger.debug("DO authentication response received: %s", data)
+
         tok = data.get("Token") or data.get("token") or data.get("otorgado_a") or ""
         if not tok:
             raise DigifactAuthError(
                 "DO login succeeded but response contained no token", raw=data
             )
         self._token = tok
+        logger.debug("DO authentication successful, token acquired")
         return self._token
 
     def _headers(self) -> dict:
@@ -69,6 +82,14 @@ class DoProvider(BaseProvider):
 
     def _certify(self, payload: dict) -> dict:
         """POST to /v2/transform/nuc_json to certify an e-CF."""
+        logger.debug(
+            "Sending certify request to DO API at %s/v2/transform/nuc_json (TAXID=%s, USERNAME=%s)",
+            self.config.base_url,
+            self.config.taxid,
+            self.config.username,
+        )
+        logger.debug("Certify request payload: %s", payload)
+
         resp = self._session.post(
             f"{self.config.base_url}/v2/transform/nuc_json",
             params={
@@ -86,7 +107,10 @@ class DoProvider(BaseProvider):
             raise DigifactApiError(
                 f"DO Certify HTTP error: {exc}", raw=_try_json(resp)
             ) from exc
-        return _check_response(resp.json())
+
+        data = _check_response(resp.json())
+        logger.debug("Certify response data: %s", data)
+        return data
 
     def _parse_result(self, data: dict) -> DteResult:
         """Parse a DO certification response into a DteResult.
@@ -99,13 +123,21 @@ class DoProvider(BaseProvider):
         number = str(data.get("suggestedFileName") or data.get("Numero") or "")
         ts_raw = data.get("issuedTimeStamp") or data.get("FechaEmision") or ""
         issue_dt = ts_raw.replace("T", " ") if "T" in ts_raw else ts_raw
-        return DteResult(
+        result = DteResult(
             auth_number=auth,
             series=series,
             number=number,
             issue_datetime=issue_dt,
             raw=data,
         )
+        logger.debug(
+            "Parsed DteResult: auth=%s, series=%s, number=%s, issue_datetime=%s",
+            result.auth_number,
+            result.series,
+            result.number,
+            result.issue_datetime,
+        )
+        return result
 
     # ── Public DTE methods ────────────────────────────────────────────────────
 
@@ -145,6 +177,11 @@ class DoProvider(BaseProvider):
         seller_address = kwargs.pop("seller_address", self.config.seller_address or "")
         self._merge_branch_defaults(kwargs)
 
+        logger.debug(
+            "Building invoice payload (doc_type=%s, secuencia=%s)",
+            doc_type,
+            secuencia,
+        )
         payload = build_ecf(
             self.config.taxid,
             seller_name,
@@ -204,6 +241,11 @@ class DoProvider(BaseProvider):
         seller_address = kwargs.pop("seller_address", self.config.seller_address or "")
         self._merge_branch_defaults(kwargs)
 
+        logger.debug(
+            "Building credit note payload (secuencia=%s, codigo_modificacion=%s)",
+            secuencia,
+            codigo_modificacion,
+        )
         payload = build_ecf_34(
             self.config.taxid,
             seller_name,
@@ -249,6 +291,11 @@ class DoProvider(BaseProvider):
         seller_address = kwargs.pop("seller_address", self.config.seller_address or "")
         self._merge_branch_defaults(kwargs)
 
+        logger.debug(
+            "Building debit note payload (secuencia=%s, codigo_modificacion=%s)",
+            secuencia,
+            codigo_modificacion,
+        )
         payload = build_ecf_33(
             self.config.taxid,
             seller_name,
@@ -267,6 +314,12 @@ class DoProvider(BaseProvider):
 
     def get_document(self, auth_number: str, fmt: str = "XML") -> dict:
         """Retrieve a certified e-CF document via GET /getDocument (lowercase)."""
+        logger.debug(
+            "Retrieving document from DO API at %s/getDocument (AUTHNUMBER=%s, FORMAT=%s)",
+            self.config.base_url,
+            auth_number,
+            fmt,
+        )
         resp = self._session.get(
             f"{self.config.base_url}/getDocument",
             params={
@@ -284,7 +337,9 @@ class DoProvider(BaseProvider):
             raise DigifactApiError(
                 f"DO GetDocument HTTP error: {exc}", raw=_try_json(resp)
             ) from exc
-        return resp.json()
+        data = resp.json()
+        logger.debug("GetDocument response data: %s", data)
+        return data
 
     def cancel(self, auth_number: str, receiver_id: str, issue_datetime: str, reason: str = "Anulación") -> dict:
         """Cancel an e-CF (not yet fully confirmed for DO API — may raise).
