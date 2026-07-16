@@ -294,7 +294,8 @@ def _build_items_do(
         indicador_facturacion: str  "1"=ITBIS 18%, "2"=16%, "3"=0%, "4"=Exento
         qty: float | Decimal   (default 1)
         type: str               (default "1")
-        unit_of_measure: str    (default "98")
+        unit_of_measure: str    (default "", which omits the field;
+                                use "UNI" or "unidad" for DGII code "43")
         discount: float | None
         discount_type: str      (default "$" for fixed amount, "%" for percentage)
         discount_rate: float | None  (rate for percentage discounts)
